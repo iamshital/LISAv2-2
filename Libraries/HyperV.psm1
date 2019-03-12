@@ -674,14 +674,13 @@ function Apply-HyperVCheckpoint {
             $msg = ("VM:{0} restored to checkpoint: {1}" `
                  -f ($VM.RoleName,$CheckpointName))
             Write-LogInfo $msg
-            Start-VM -Name $VM.RoleName -ComputerName $VM.HyperVHost
-            return $true
-        }
+            Start-VM -Name $VM.RoleName -ComputerName $VM.HyperVHost        }
         else {
             Write-LogErr "Restoring to Checkpoint $CheckpointName Failed on VM $VM.RoleName due to checkpoint not found"
             return $false
         }
     }
+    return $true
 }
 
 
