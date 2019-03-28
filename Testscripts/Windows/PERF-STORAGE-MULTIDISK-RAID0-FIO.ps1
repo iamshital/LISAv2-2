@@ -242,6 +242,9 @@ function Main {
             -username "root" -password $password -download -downloadTo $LogDir -files "FIOTest-*.tar.gz"
         Copy-RemoteFiles -downloadFrom $allVMData.PublicIP -port $allVMData.SSHPort `
             -username "root" -password $password -download -downloadTo $LogDir -files "VM_properties.csv"
+        Copy-RemoteFiles -downloadFrom $allVMData.PublicIP -port $allVMData.SSHPort `
+            -username "root" -password $password -download -downloadTo $LogDir -files "fioConsoleLogs.txt"
+
         if ($finalStatus -imatch "TestFailed") {
             Write-LogErr "Test failed. Last known status : $currentStatus."
             $testResult = "FAIL"
