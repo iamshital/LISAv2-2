@@ -7,10 +7,10 @@
 <#
 .SYNOPSIS
     This script authenticates PS session using All test results analysis.
-    This script checks contents of the ./Report/*-junit.xml files and exit
+    This script checks contents of the ./report/*-junit.xml files and exit 
     with zero or non-zero exit code.
 
-.PARAMETER
+.PARAMETER 
 
 .INPUTS
 
@@ -21,18 +21,15 @@
 .EXAMPLE
 #>
 ###############################################################################################
-$LogFileName = "AnalyseAllResults.log"
-#Import Libraries.
-if (!$global:LogFileName){
-    Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-}
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
 
-$allReports = Get-ChildItem .\Report | Where-Object {($_.FullName).EndsWith("-junit.xml") -and ($_.FullName -imatch "\d\d\d\d\d\d")}
+#Import Libraries.
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
+
+$allReports = Get-ChildItem .\report | Where-Object {($_.FullName).EndsWith("-junit.xml") -and ($_.FullName -imatch "\d\d\d\d\d\d")}
 $retValue = 0
 foreach ( $report in $allReports )
 {
-    Write-LogInfo "Analyzing $($report.FullName).."
+    LogMsg "Analysing $($report.FullName).."
     $resultXML = [xml](Get-Content "$($report.FullName)" -ErrorAction SilentlyContinue)
     if ( ( $resultXML.testsuites.testsuite.failures -eq 0 ) -and ( $resultXML.testsuites.testsuite.errors -eq 0 ) -and ( $resultXML.testsuites.testsuite.tests -gt 0 ))
     {
@@ -45,14 +42,14 @@ foreach ( $report in $allReports )
     {
         if ($testcase.failure)
         {
-            Write-LogInfo "$($testcase.name) : FAIL"
+            LogMsg "$($testcase.name) : FAIL"
         }
-        else
+        else 
         {
-            Write-LogInfo "$($testcase.name) : PASS"
+            LogMsg "$($testcase.name) : PASS"
         }
-    }
-    Write-LogInfo "----------------------------------------------"
+    } 
+    LogMsg "----------------------------------------------"
 }
-Write-LogInfo "Exiting with Code : $retValue"
+LogMsg "Exiting with Code : $retValue"
 exit $retValue

@@ -26,13 +26,10 @@ param
     [string]$destinationLocations,
     [string]$destinationAccountType,
     [string]$sourceVHDName,
-    [string]$destinationVHDName,
-    [string]$LogFileName = "CopyVHDtoOtherStorageAccount.log"
+    [string]$destinationVHDName
 )
-if (!$global:LogFileName){
-    Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-}
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
+
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
 
 try
 {
@@ -58,7 +55,7 @@ try
         try
         {
             $retryCount += 1
-            Write-LogInfo "[Attempt $retryCount/$maxRetryCount] : Getting Storage Account details ..."
+            LogMsg "[Attempt $retryCount/$maxRetryCount] : Getting Storage Account details ..."
             $GetAzureRMStorageAccount = $null
             $GetAzureRMStorageAccount = Get-AzureRmStorageAccount
             if ($GetAzureRMStorageAccount -eq $null)
@@ -72,7 +69,7 @@ try
         }
         catch
         {
-            Write-LogErr "Error in fetching Storage Account info. Retrying in 10 seconds."
+            LogErr "Error in fetching Storage Account info. Retrying in 10 seconds."
             sleep -Seconds 10
             $saInfoCollected = $false
         }
@@ -134,12 +131,12 @@ try
         # Start the Copy
         if (($SrcStorageAccount -eq $DestAccountName) -and ($SrcStorageBlob -eq $DestBlob))
         {
-            Write-LogInfo "Skipping copy for : $DestAccountName as source storage account and VHD name is same."
+            LogMsg "Skipping copy for : $DestAccountName as source storage account and VHD name is same."
         }
         else
         {
-            Write-LogInfo "Copying $SrcStorageBlob as $DestBlob from and to storage account $DestAccountName/$DestContainer"
-            $null = Start-AzureStorageBlobCopy -AbsoluteUri $SasUrl  -DestContainer $destContainer -DestContext $destContext -DestBlob $destBlob -Force
+            LogMsg "Copying $SrcStorageBlob as $DestBlob from and to storage account $DestAccountName/$DestContainer"
+            $out = Start-AzureStorageBlobCopy -AbsoluteUri $SasUrl  -DestContainer $destContainer -DestContext $destContext -DestBlob $destBlob -Force
             $destContextArr += $destContext
         }
     }
@@ -156,11 +153,11 @@ try
             $status = Get-AzureStorageBlobCopyState -Container $destContainer -Blob $destBlob -Context $destContext
             if ($status.Status -eq "Success")
             {
-                Write-LogInfo "$DestBlob : $($destContext.StorageAccountName) : Done : 100 %"
+                LogMsg "$DestBlob : $($destContext.StorageAccountName) : Done : 100 %"
             }
             elseif ($status.Status -eq "Failed")
             {
-                Write-LogInfo "$DestBlob : $($destContext.StorageAccountName) : Failed."
+                LogMsg "$DestBlob : $($destContext.StorageAccountName) : Failed."
             }
             elseif ($status.Status -eq "Pending")
             {
@@ -168,27 +165,27 @@ try
                 $CopyingInProgress = $true
                 $newDestContextArr += $destContext
                 $copyPercent = [math]::Round((($status.BytesCopied/$status.TotalBytes) * 100),2)
-                Write-LogInfo "$DestBlob : $($destContext.StorageAccountName) : Running : $copyPercent %"
+                LogMsg "$DestBlob : $($destContext.StorageAccountName) : Running : $copyPercent %"
             }
         }
         if ($CopyingInProgress)
         {
-            Write-LogInfo "--------$($newDestContextArr.Count) copy operations still in progress.-------"
+            LogMsg "--------$($newDestContextArr.Count) copy operations still in progress.-------"
             $destContextArr = $newDestContextArr
             Sleep -Seconds 10
         }
         $ExitCode = 0
     }
-    Write-LogInfo "All Copy Operations completed successfully."
+    LogMsg "All Copy Operations completed successfully."
 }
-catch
+catch 
 {
     $ExitCode = 1
-    Raise-Exception ($_)
+    ThrowExcpetion ($_)
 }
 finally
 {
-    Write-LogInfo "Exiting with code: $ExitCode"
+    LogMsg "Exiting with code: $ExitCode"
     exit $ExitCode
 }
 #endregion

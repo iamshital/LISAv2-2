@@ -27,6 +27,7 @@ UTIL_FILE="$HOMEDIR/utils.sh"
 ICA_TESTRUNNING="TestRunning"      # The test is running
 ICA_TESTCOMPLETED="TestCompleted"  # The test completed successfully
 ICA_TESTABORTED="TestAborted"      # Error during the setup of the test
+ICA_TESTFAILED="TestFailed"        # Error occurred during the test
 touch ./fioTest.log
 
 . ${CONSTANTS_FILE} || {
@@ -49,7 +50,7 @@ UpdateTestState()
 
 RunFIO()
 {
-	UpdateTestState $ICA_TESTRUNNING
+	UpdateTestState ICA_TESTRUNNING
 	FILEIO="--size=${fileSize} --direct=1 --ioengine=libaio --filename=fiodata --overwrite=1  "
 
 	####################################
@@ -65,6 +66,7 @@ RunFIO()
 	#LOGDIR="${HOMEDIR}/FIOLog"
 	JSONFILELOG="${LOGDIR}/jsonLog"
 	IOSTATLOGDIR="${LOGDIR}/iostatLog"
+	BLKTRACELOGDIR="${LOGDIR}/blktraceLog"
 	LOGFILE="${LOGDIR}/fio-test.log.txt"	
 
 	#redirect blktrace files directory
@@ -121,7 +123,7 @@ RunFIO()
 				LogMsg "Running ${testmode} test, ${io}K bs, ${Thread} threads ..."
 				jsonfilename="${JSONFILELOG}/fio-result-${testmode}-${io}K-${Thread}td.json"
 				fio $FILEIO --readwrite=$testmode --bs=${io}K --runtime=$ioruntime --iodepth=$Thread --numjobs=$numjobs --output-format=json --output=$jsonfilename --name="iteration"${iteration} >> $LOGFILE
-				iostatPID=$(ps -ef | awk '/iostat/ && !/awk/ { print $2 }')
+				iostatPID=`ps -ef | awk '/iostat/ && !/awk/ { print $2 }'`
 				kill -9 $iostatPID
 				Thread=$(( Thread*2 ))		
 				iteration=$(( iteration+1 ))
@@ -138,7 +140,7 @@ RunFIO()
 	tar -cvzf $compressedFileName $LOGDIR/
 
 	echo "Test logs are located at ${LOGDIR}"
-	UpdateTestState $ICA_TESTCOMPLETED
+	UpdateTestState ICA_TESTCOMPLETED
 }
 
 ############################################################
@@ -156,36 +158,21 @@ if [ $? -eq 0 ]; then
 	mkdir $HOMEDIR/FIOLog
 	LOGDIR="${HOMEDIR}/FIOLog"
 
-	GetDistro
-
-	if [[ $OS_FAMILY == "Rhel" ]];then
-		nfsServerPackage="nfs-utils"
-		nfsService="nfs"
-		install_package "nfs-utils"
-	elif [[ $OS_FAMILY == "Sles" ]]; then
-		nfsServerPackage="nfs-kernel-server"
-		nfsService="nfsserver"
-	elif [[ $OS_FAMILY == "Debian" ]];then
-		nfsServerPackage="nfs-kernel-server"
-		nfsService="nfs-kernel-server"
-		install_package "nfs-common"
+	if [ $DISTRO_NAME == "sles" ] && [[ $DISTRO_VERSION =~ 12 ]]; then
+		mdVolume="/dev/md/mdauto0"
 	else
-		LogMsg "Distro not supported"
-		UpdateTestState $ICA_TESTABORTED
-		exit 10
+		mdVolume="/dev/md0"
 	fi
-
 	mountDir="/data"
 	cd ${HOMEDIR}
 	install_fio
-	install_package $nfsClientPackage
+	install_package "nfs-common"
 
 	#Start NFS Server
-	ssh root@nfs-server-vm ". utils.sh; update_repos"
-	ssh root@nfs-server-vm ". utils.sh; install_package ${nfsServerPackage}"
+	ssh root@nfs-server-vm "apt update"
+	ssh root@nfs-server-vm "apt install -y nfs-kernel-server"
 	ssh root@nfs-server-vm "echo '/data nfs-client-vm(rw,sync,no_root_squash)' >> /etc/exports"
-	ssh root@nfs-server-vm "service ${nfsService} restart"
-	ssh root@nfs-server-vm ". utils.sh; enable_nfs_rhel"
+	ssh root@nfs-server-vm "service nfs-kernel-server restart"
 	#Mount NFS Directory.
 	mkdir -p ${mountDir}
 	mount -t nfs -o proto=${nfsprotocol},vers=3  nfs-server-vm:${mountDir} ${mountDir}
@@ -204,3 +191,5 @@ else
 	LogMsg "Error: Unable to Create RAID on NSF server"
 	exit 1
 fi
+
+

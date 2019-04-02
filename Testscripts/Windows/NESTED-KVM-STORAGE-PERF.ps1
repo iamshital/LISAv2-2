@@ -1,6 +1,5 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-param([object] $AllVmData, [object] $CurrentTestData)
 
 $testScript = "nested_kvm_storage_perf.sh"
 
@@ -14,8 +13,11 @@ collect_VM_properties nested_properties.csv
 "@
 
 	$scriptContent2 = @"
+wget https://ciwestusv2.blob.core.windows.net/scriptfiles/JSON.awk
+wget https://ciwestusv2.blob.core.windows.net/scriptfiles/gawk
+wget https://ciwestusv2.blob.core.windows.net/scriptfiles/fio_jason_parser.sh
 chmod +x *.sh
-cp fio_jason_parser.sh gawk JSON.awk utils.sh /root/FIOLog/jsonLog/
+cp fio_jason_parser.sh gawk JSON.awk /root/FIOLog/jsonLog/
 cd /root/FIOLog/jsonLog/
 ./fio_jason_parser.sh
 cp perf_fio.csv /root
@@ -27,38 +29,42 @@ chmod 666 /root/perf_fio.csv
 
 function Start-TestExecution ($ip, $port)
 {
-	Copy-RemoteFiles -uploadTo $ip -port $port -files $currentTestData.files -username $user -password $password -upload
+	RemoteCopy -uploadTo $ip -port $port -files $currentTestData.files -username $user -password $password -upload
 
-	Run-LinuxCmd -username $user -password $password -ip $ip -port $port -command "chmod +x *" -runAsSudo
+	RunLinuxCmd -username $user -password $password -ip $ip -port $port -command "chmod +x *" -runAsSudo
 
-	Write-LogInfo "Executing : ${testScript}"
+	LogMsg "Executing : ${testScript}"
 	$cmd = "/home/$user/${testScript} > /home/$user/TestExecutionConsole.log"
-	$testJob = Run-LinuxCmd -username $user -password $password -ip $ip -port $port -command $cmd -runAsSudo -RunInBackground
+	$testJob = RunLinuxCmd -username $user -password $password -ip $ip -port $port -command $cmd -runAsSudo -RunInBackground
 
 	while ((Get-Job -Id $testJob).State -eq "Running" )
 	{
-		$currentStatus = Run-LinuxCmd -username $user -password $password -ip $ip -port $port -command "cat /home/$user/state.txt"
-		Write-LogInfo "Current Test Status : $currentStatus"
-		Wait-Time -seconds 20
+		$currentStatus = RunLinuxCmd -username $user -password $password -ip $ip -port $port -command "cat /home/$user/state.txt"
+		LogMsg "Current Test Staus : $currentStatus"
+		WaitFor -seconds 20
 	}
 }
 
-function Send-ResultToDatabase ($GlobalConfig, $logDir)
+function Send-ResultToDatabase ($xmlConfig, $logDir)
 {
-	Write-LogInfo "Uploading the test results.."
-	$dataSource = $GlobalConfig.Global.$TestPlatform.ResultsDatabase.server
-	$DBuser = $GlobalConfig.Global.$TestPlatform.ResultsDatabase.user
-	$DBpassword = $GlobalConfig.Global.$TestPlatform.ResultsDatabase.password
-	$database = $GlobalConfig.Global.$TestPlatform.ResultsDatabase.dbname
-	$dataTableName = $GlobalConfig.Global.$TestPlatform.ResultsDatabase.dbtable
-	$TestCaseName = $GlobalConfig.Global.$TestPlatform.ResultsDatabase.testTag
+	LogMsg "Uploading the test results.."
+	$dataSource = $xmlConfig.config.$TestPlatform.database.server
+	$DBuser = $xmlConfig.config.$TestPlatform.database.user
+	$DBpassword = $xmlConfig.config.$TestPlatform.database.password
+	$database = $xmlConfig.config.$TestPlatform.database.dbname
+	$dataTableName = $xmlConfig.config.$TestPlatform.database.dbtable
+	$TestCaseName = $xmlConfig.config.$TestPlatform.database.testTag
 	if ($dataSource -And $DBuser -And $DBpassword -And $database -And $dataTableName)
 	{
+		$maxIOPSforModeCsv = Import-Csv -Path $LogDir\maxIOPSforMode.csv
+		$maxIOPSforBlockSizeCsv = Import-Csv -Path $LogDir\maxIOPSforBlockSize.csv
 		$fioDataCsv = Import-Csv -Path $LogDir\fioData.csv
+
+		$GuestDistro = cat "$LogDir\VM_properties.csv" | Select-String "OS type"| %{$_ -replace ",OS type,",""}
 		$HostType = $TestPlatform
 		if ($TestPlatform -eq "hyperV")
 		{
-			$HostBy = $TestLocation
+			$HostBy = $xmlConfig.config.Hyperv.Host.ServerName
 			$HyperVMappedSizes = [xml](Get-Content .\XML\AzureVMSizeToHyperVMapping.xml)
 			$L1GuestCpuNum = $HyperVMappedSizes.HyperV.$HyperVInstanceSize.NumberOfCores
 			$L1GuestMemMB = [int]($HyperVMappedSizes.HyperV.$HyperVInstanceSize.MemoryInMB)
@@ -66,18 +72,16 @@ function Send-ResultToDatabase ($GlobalConfig, $logDir)
 		}
 		else
 		{
-			$HostBy	= ($global:TestLocation).Replace('"','')
+			$HostBy	= ($xmlConfig.config.$TestPlatform.General.Location).Replace('"','')
 			$L1GuestSize = $AllVMData.InstanceSize
 		}
+		$setupType = $currentTestData.setupType
 		$count = 0
-
-		# TODO: Change to get the disk size from either host side or guest side
-		<#
 		foreach ($disk in $xmlConfig.config.$TestPlatform.Deployment.$setupType.ResourceGroup.VirtualMachine.DataDisk)
 		{
 			$disk_size = $disk.DiskSizeInGB
 			$count ++
-		} #>
+		}
 		$DiskSetup = "$count SSD: $($disk_size)G"
 		$HostOS = cat "$LogDir\VM_properties.csv" | Select-String "Host Version"| %{$_ -replace ",Host Version,",""}
 		# Get L1 guest info
@@ -132,7 +136,7 @@ function Send-ResultToDatabase ($GlobalConfig, $logDir)
 			$BlockSize_KB= [Int]((($fioDataCsv |  where { $_.Threads -eq "$QDepth"} | Select BlockSize)[0].BlockSize).Replace("K",""))
 
 			$SQLQuery += "('$TestCaseName','$(Get-Date -Format yyyy-MM-dd)','$HostType','$HostBy','$HostOS','$L1GuestOSType','$L1GuestDistro','$L1GuestSize','$L1GuestKernelVersion','$L2GuestDistro','$L2GuestKernelVersion','$L2GuestCpuNum','$L2GuestMemMB','$DiskSetup','$RaidOption','$BlockSize_KB','$QDepth','$seq_read_iops','$seq_read_lat_usec','$rand_read_iops','$rand_read_lat_usec','$seq_write_iops','$seq_write_lat_usec','$rand_write_iops','$rand_write_lat_usec'),"
-			Write-LogInfo "Collected performance data for $QDepth QDepth."
+			LogMsg "Collected performace data for $QDepth QDepth."
 		}
 
 		$SQLQuery = $SQLQuery.TrimEnd(',')
@@ -144,19 +148,19 @@ function Send-ResultToDatabase ($GlobalConfig, $logDir)
 		$command = $connection.CreateCommand()
 		$command.CommandText = $SQLQuery
 
-		$null = $command.executenonquery()
+		$result = $command.executenonquery()
 		$connection.Close()
-		Write-LogInfo "Uploading the test results done."
+		LogMsg "Uploading the test results done!!"
 	}
 	else
 	{
-		Write-LogInfo "Database details are not provided. Results will not be uploaded to database!!"
+		LogMsg "Database details are not provided. Results will not be uploaded to database!!"
 	}
 }
 
 function Main()
 {
-	$currentTestResult = Create-TestResultObject
+	$currentTestResult = CreateTestResultObject
 	$resultArr = @()
 	$testResult = $resultAborted
 	try
@@ -165,21 +169,21 @@ function Main()
 		$hs1vm1sshport = $AllVMData.SSHPort
 
 		New-ShellScriptFiles -logDir $LogDir
-		Copy-RemoteFiles -uploadTo $hs1VIP -port $hs1vm1sshport -files "$LogDir\StartFioTest.sh,$LogDir\ParseFioTestLogs.sh" -username $user -password $password -upload
+		RemoteCopy -uploadTo $hs1VIP -port $hs1vm1sshport -files ".\$LogDir\StartFioTest.sh,.\$LogDir\ParseFioTestLogs.sh" -username $user -password $password -upload
 
 		Start-TestExecution -ip $hs1VIP -port $hs1vm1sshport
 
 		$files="/home/$user/state.txt, /home/$user/$testScript.log, /home/$user/TestExecutionConsole.log"
-		Copy-RemoteFiles -download -downloadFrom $hs1VIP -files $files -downloadTo $LogDir -port $hs1vm1sshport -username $user -password $password
+		RemoteCopy -download -downloadFrom $hs1VIP -files $files -downloadTo $LogDir -port $hs1vm1sshport -username $user -password $password
 		$finalStatus = Get-Content $LogDir\state.txt
 		if ( $finalStatus -imatch "TestFailed")
 		{
-			Write-LogErr "Test failed. Last known status : $currentStatus."
+			LogErr "Test failed. Last known status : $currentStatus."
 			$testResult = $resultFail
 		}
 		elseif ( $finalStatus -imatch "TestAborted")
 		{
-			Write-LogErr "Test Aborted. Last known status : $currentStatus."
+			LogErr "Test Aborted. Last known status : $currentStatus."
 			$testResult = $resultAborted
 		}
 		elseif ( $finalStatus -imatch "TestCompleted")
@@ -188,18 +192,18 @@ function Main()
 		}
 		elseif ( $finalStatus -imatch "TestRunning")
 		{
-			Write-LogInfo "Powershell background job for test is completed but VM is reporting that test is still running. Please check $LogDir\TestExecutionConsole.txt"
+			LogMsg "Powershell backgroud job for test is completed but VM is reporting that test is still running. Please check $LogDir\TestExecutionConsole.txt"
 			$testResult = $resultAborted
 		}
-		Copy-RemoteFiles -download -downloadFrom $hs1VIP -files "fioConsoleLogs.txt" -downloadTo $LogDir -port $hs1vm1sshport -username $user -password $password
-		$CurrentTestResult.TestSummary += New-ResultSummary -testResult $testResult -metaData "" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+		RemoteCopy -download -downloadFrom $hs1VIP -files "fioConsoleLogs.txt" -downloadTo $LogDir -port $hs1vm1sshport -username $user -password $password
+		$CurrentTestResult.TestSummary += CreateResultSummary -testResult $testResult -metaData "" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
 		if ($testResult -imatch $resultPass)
 		{
 			Remove-Item "$LogDir\*.csv" -Force
 			$remoteFiles = "FIOTest-*.tar.gz,perf_fio.csv,nested_properties.csv,VM_properties.csv,runlog.txt"
-			Copy-RemoteFiles -download -downloadFrom $hs1VIP -files $remoteFiles -downloadTo $LogDir -port $hs1vm1sshport -username $user -password $password
+			RemoteCopy -download -downloadFrom $hs1VIP -files $remoteFiles -downloadTo $LogDir -port $hs1vm1sshport -username $user -password $password
 			$checkValues = "$resultPass,$resultFail,$resultAborted"
-			$CurrentTestResult.TestSummary += New-ResultSummary -testResult $testResult -metaData "" -checkValues $checkValues -testName $currentTestData.testName
+			$CurrentTestResult.TestSummary += CreateResultSummary -testResult $testResult -metaData "" -checkValues $checkValues -testName $currentTestData.testName
 			foreach($line in (Get-Content "$LogDir\perf_fio.csv"))
 			{
 				if ( $line -imatch "Max IOPS of each mode" )
@@ -233,20 +237,20 @@ function Main()
 					Add-Content -Value $line -Path $LogDir\fioData.csv
 				}
 			}
-			Send-ResultToDatabase -GlobalConfig $GlobalConfig -logDir $LogDir
+			Send-ResultToDatabase -xmlConfig $xmlConfig -logDir $LogDir
 		}
 	}
 	catch
 	{
 		$errorMessage =  $_.Exception.Message
 		$ErrorLine = $_.InvocationInfo.ScriptLineNumber
-		Write-LogInfo "EXCEPTION : $errorMessage at line: $ErrorLine"
+		LogMsg "EXCEPTION : $errorMessage at line: $ErrorLine"
 	}
 
 	$resultArr += $testResult
-	Write-LogInfo "Test result : $testResult"
-	$currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
-	return $currentTestResult.TestResult
+	LogMsg "Test result : $testResult"
+	$currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+	return $currentTestResult.TestResult 
 }
 
 

@@ -32,50 +32,59 @@ param
     $destinationStorageKey
 )
 
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
 
-try {
-    if (![string]::IsNullOrEmpty($destinationStorageKey)) {
-        Write-LogInfo "Use provided storage key"
-    } else {
-        Write-LogInfo "Getting $destinationStorageAccount storage account key..."
+try
+{
+    if ($destinationStorageKey)
+    {
+        LogMsg "Using user provided storage account key."
+    }
+    else
+    {
+        LogMsg "Getting $destinationStorageAccount storage account key..."
         $allResources = Get-AzureRmResource
         $destSARG = ($allResources | Where { $_.ResourceType -imatch "storageAccounts" -and $_.Name -eq "$destinationStorageAccount" }).ResourceGroupName
-        if ([string]::IsNullOrEmpty($destSARG)) {
-            Write-LogErr "Not found storage account $destinationStorageAccount in current subscription, please provide storage key"
-            return
-        }
         $keyObj = Get-AzureRmStorageAccountKey -ResourceGroupName $destSARG -Name $destinationStorageAccount
         $destinationStorageKey = $keyObj[0].Value
     }
     $containerName = "$destinationContainer"
     $storageAccountName = $destinationStorageAccount
     $blobContext = New-AzureStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $destinationStorageKey
-    $null = New-AzureStorageContainer -Name $destinationContainer -Permission Blob -Context $blobContext -ErrorAction SilentlyContinue
+    $Out = New-AzureStorageContainer -Name $destinationContainer -Permission Blob -Context $blobContext -ErrorAction SilentlyContinue
     $UploadedFileURLs = @()
-    foreach($fileName in $filePaths.Split(",")) {
-        if ($destinationFolder) {
+    foreach($fileName in $filePaths.Split(","))
+    {
+        $ticks = (Get-Date).Ticks
+        if ($destinationFolder)
+        {
             $blobName = "$destinationFolder/$($fileName | Split-Path -Leaf)"
-        } else {
+        }
+        else 
+        {
             $blobName = "$($fileName | Split-Path -Leaf)"
         }
         $LocalFileProperties = Get-Item -Path $fileName
-        Write-LogInfo "Uploading $([math]::Round($LocalFileProperties.Length/1024,2))KB $filename --> $($blobContext.BlobEndPoint)$containerName/$blobName"
+        LogMsg "Uploading $([math]::Round($LocalFileProperties.Length/1024,2))KB $filename --> $($blobContext.BlobEndPoint)$containerName/$blobName"
         $UploadedFileProperties = Set-AzureStorageBlobContent -File $filename -Container $containerName -Blob $blobName -Context $blobContext -Force -ErrorAction Stop
-        if ( $LocalFileProperties.Length -eq $UploadedFileProperties.Length ) {
-            Write-LogInfo "Succeeded."
+        if ( $LocalFileProperties.Length -eq $UploadedFileProperties.Length )
+        {
+            LogMsg "Succeeded."
             $UploadedFileURLs += "$($blobContext.BlobEndPoint)$containerName/$blobName"
-        } else {
-            Write-LogErr "Failed."
+        }
+        else
+        {
+            LogErr "Failed."
         }
     }
     return $UploadedFileURLs
-
-} catch {
+}
+catch
+{
     $line = $_.InvocationInfo.ScriptLineNumber
     $script_name = ($_.InvocationInfo.ScriptName).Replace($PWD,".")
     $ErrorMessage =  $_.Exception.Message
-    Write-LogErr "EXCEPTION : $ErrorMessage"
-    Write-LogErr "Source : Line $line in script $script_name."
-    Write-LogErr "ERROR : $($blobContext.BlobEndPoint)$containerName/$blobName : Failed"
+    LogErr "EXCEPTION : $ErrorMessage"
+    LogErr "Source : Line $line in script $script_name."
+    LogErr "ERROR : $($blobContext.BlobEndPoint)$containerName/$blobName : Failed"
 }

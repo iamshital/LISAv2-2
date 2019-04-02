@@ -3,13 +3,15 @@
 # Licensed under the Apache License.
 from azuremodules import *
 
+import argparse
+import sys
+import time
 import re
 
 file_path = os.path.dirname(os.path.realpath(__file__))
 constants_path = os.path.join(file_path, "constants.sh")
 params = GetParams(constants_path)
 expectedHostname = params["ROLENAME"]
-
 
 def RunTest(expectedHost):
     UpdateState("TestRunning")
@@ -20,7 +22,6 @@ def RunTest(expectedHost):
         ResultLog.error('FAIL')
         UpdateState("TestCompleted")
 
-
 def CheckHostName(expectedHost):
     RunLog.info("Checking hostname...")
     output = Run("hostname")
@@ -30,7 +31,6 @@ def CheckHostName(expectedHost):
     else:
         RunLog.error('Hostname change failed. Current hostname : {0} Expected hostname : {1}'.format(output, expectedHost))
         return False
-
 
 def CheckFQDN(expectedHost):
     RunLog.info("Checking fqdn...")

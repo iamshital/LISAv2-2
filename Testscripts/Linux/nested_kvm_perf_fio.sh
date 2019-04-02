@@ -17,12 +17,12 @@
 #######################################################################
 
 HOMEDIR="/root"
-Log_Msg()
+log_msg()
 {
 	echo "[$(date +"%x %r %Z")] ${1}"
 	echo "[$(date +"%x %r %Z")] ${1}" >> "${HOMEDIR}/runlog.txt"
 }
-Log_Msg "Sleeping 10 seconds.."
+log_msg "Sleeping 10 seconds.."
 sleep 10
 
 CONSTANTS_FILE="$HOMEDIR/constants.sh"
@@ -35,25 +35,25 @@ touch ./fioTest.log
 
 . ${CONSTANTS_FILE} || {
 	errMsg="Error: missing ${CONSTANTS_FILE} file"
-	Log_Msg "${errMsg}"
-	Update_Test_State $ICA_TESTABORTED
+	log_msg "${errMsg}"
+	update_test_state $ICA_TESTABORTED
 	exit 10
 }
 . ${UTIL_FILE} || {
 	errMsg="Error: missing ${UTIL_FILE} file"
-	Log_Msg "${errMsg}"
-	Update_Test_State $ICA_TESTABORTED
+	log_msg "${errMsg}"
+	update_test_state $ICA_TESTABORTED
 	exit 10
 }
 
 
-Update_Test_State()
+update_test_state()
 {
 	echo "${1}" > $HOMEDIR/state.txt
 }
-Run_Fio()
+run_fio()
 {
-	Update_Test_State $ICA_TESTRUNNING
+	update_test_state $ICA_TESTRUNNING
 
 	####################################
 	#All run config set here
@@ -67,6 +67,7 @@ Run_Fio()
 
 	JSONFILELOG="${LOGDIR}/jsonLog"
 	IOSTATLOGDIR="${LOGDIR}/iostatLog"
+	BLKTRACELOGDIR="${LOGDIR}/blktraceLog"
 	LOGFILE="${LOGDIR}/fio-test.log.txt"	
 
 	#redirect blktrace files directory
@@ -101,10 +102,10 @@ Run_Fio()
 				iostatfilename="${IOSTATLOGDIR}/iostat-fio-${testmode}-${io}K-${Thread}td.txt"
 				nohup iostat -x 5 -t -y > $iostatfilename &
 				echo "-- iteration ${iteration} ----------------------------- ${testmode} test, ${io}K bs, ${Thread} threads, ${numjobs} jobs, 5 minutes ------------------ $(date +"%x %r %Z") ---" >> $LOGFILE
-				Log_Msg "Running ${testmode} test, ${io}K bs, ${Thread} threads ..."
+				log_msg "Running ${testmode} test, ${io}K bs, ${Thread} threads ..."
 				jsonfilename="${JSONFILELOG}/fio-result-${testmode}-${io}K-${Thread}td.json"
 				fio $FILEIO --readwrite=$testmode --bs=${io}K --runtime=$ioruntime --iodepth=$Thread --numjobs=$numjobs --output-format=json --output=$jsonfilename --name="iteration"${iteration} >> $LOGFILE
-				iostatPID=$(ps -ef | awk '/iostat/ && !/awk/ { print $2 }')
+				iostatPID=`ps -ef | awk '/iostat/ && !/awk/ { print $2 }'`
 				kill -9 $iostatPID
 				Thread=$(( Thread*2 ))		
 				iteration=$(( iteration+1 ))
@@ -116,28 +117,28 @@ Run_Fio()
 	echo "===================================== Completed Run $(date +"%x %r %Z") script generated 2/9/2015 4:24:44 PM ================================" >> $LOGFILE
 
 	compressedFileName="${HOMEDIR}/FIOTest-$(date +"%m%d%Y-%H%M%S").tar.gz"
-	Log_Msg "INFO: Please wait...Compressing all results to ${compressedFileName}..."
+	log_msg "INFO: Please wait...Compressing all results to ${compressedFileName}..."
 	tar -cvzf $compressedFileName $LOGDIR/
 
 	echo "Test logs are located at ${LOGDIR}"
-	Update_Test_State $ICA_TESTCOMPLETED
+	update_test_state $ICA_TESTCOMPLETED
 }
 
-Remove_Raid_And_Format()
+remove_raid_and_format()
 {
 	disks=$(ls -l /dev | grep sd[b-z]$ | awk '{print $10}')
 
-	Log_Msg "INFO: Check and remove RAID first"
+	log_msg "INFO: Check and remove RAID first"
 	mdvol=$(cat /proc/mdstat | grep md | awk -F: '{ print $1 }')
 	if [ -n "$mdvol" ]; then
-		Log_Msg "/dev/${mdvol} already exist...removing first"
+		log_msg "/dev/${mdvol} already exist...removing first"
 		umount /dev/${mdvol}
 		mdadm --stop /dev/${mdvol}
 		mdadm --remove /dev/${mdvol}
 	fi
 	for disk in ${disks}
 	do
-		Log_Msg "formatting disk /dev/${disk}"
+		log_msg "formatting disk /dev/${disk}"
 		mkfs -t ext4 -F /dev/${disk}
 	done
 }
@@ -160,17 +161,17 @@ fi
 cd ${HOMEDIR}
 
 install_fio
-Remove_Raid_And_Format
+remove_raid_and_format
 
 disks=$(ls -l /dev | grep sd[b-z]$ | awk '{print $10}')
 if [[ $RaidOption == 'RAID in L2' ]]; then
 	#For RAID in L2
 	create_raid0 "$disks" $mdVolume
 	if [ $? -ne 0 ]; then
-		Update_Test_State "$ICA_TESTFAILED"
+		update_test_state "$ICA_TESTFAILED"
 		exit 1
 	fi
-	Log_Msg "formatting ${mdVolume}"
+	log_msg "formatting ${mdVolume}"
 	time mkfs -t ext4 -F ${mdVolume}
 	devices=$mdVolume
 	disks='md0'
@@ -189,14 +190,14 @@ fi
 
 for disk in ${disks}
 do
-	Log_Msg "set rq_affinity to 0 for device ${disk}"
+	log_msg "set rq_affinity to 0 for device ${disk}"
 	echo 0 > /sys/block/${disk}/queue/rq_affinity
 done
 
-Log_Msg "*********INFO: Starting test execution*********"
+log_msg "*********INFO: Starting test execution*********"
 
 FILEIO="--size=${fileSize} --direct=1 --ioengine=libaio --filename=${devices} --overwrite=1"
-Log_Msg "FIO common parameters: ${FILEIO}"
-Run_Fio
+log_msg "FIO common parameters: ${FILEIO}"
+run_fio
 
-Log_Msg "*********INFO: Script execution reach END. Completed !!!*********"
+log_msg "*********INFO: Script execution reach END. Completed !!!*********"

@@ -4,9 +4,10 @@
 from azuremodules import *
 
 import argparse
-import os
-import platform
+import sys
 import time
+import platform
+import os
 
 parser = argparse.ArgumentParser()
 
@@ -16,7 +17,6 @@ params = GetParams(constants_path)
 passwd = params["PASSWORD"]
 
 distro = platform.dist()
-
 
 def RunTest():
     UpdateState("TestRunning")
@@ -46,23 +46,19 @@ def RunTest():
         ResultLog.error('FAIL')
         UpdateState("TestCompleted")
 
-
 def Restartwaagent():
-    if (distro[0] == "CoreOS"):
+    if (distro[0] == "CoreOS") :
         Run("echo '"+passwd+"' | sudo -S sed -i s/Logs.Verbose=n/Logs.Verbose=y/g  /usr/share/oem/waagent.conf")
-    elif (DetectDistro()[0] == 'clear-linux-os'):
-        Run("echo '"+passwd+"' | sudo -S sed -i s/Logs.Verbose=n/Logs.Verbose=y/g  \
-            /usr/share/defaults/waagent/waagent.conf")
-    else:
+    else :
         Run("echo '"+passwd+"' | sudo -S sed -i s/Logs.Verbose=n/Logs.Verbose=y/g  /etc/waagent.conf")
     RunLog.info("Restart waagent service...")
-    result = Run("echo '"+passwd+"' | sudo -S find / -name systemctl |wc -l | tr -d '\n'")
+    result = Run("echo '"+passwd+"' | sudo -S find / -name systemctl |wc -l | tr -d '\n'")    
     if (distro[0] == "Ubuntu") or (distro[0] == "debian"):
         Run("echo '"+passwd+"' | sudo -S service walinuxagent restart")
-    else:
+    else :  
         if (result == "0") :
             os.system("echo '"+passwd+"' | sudo -S service waagent restart")
-        else:
+        else :
             os.system("echo '"+passwd+"' | sudo -S systemctl restart waagent")
     time.sleep(60)
 

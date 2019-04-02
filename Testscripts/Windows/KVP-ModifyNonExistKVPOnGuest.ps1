@@ -10,8 +10,7 @@
     is performed on the host side.
 #>
 
-param([String] $TestParams,
-      [object] $AllVmData)
+param([string] $TestParams)
 
 function Main {
     param (
@@ -20,17 +19,17 @@ function Main {
         $RootDir,
         $TestParams
     )
-
+    
     $key = $null
     $value = $null
 
     if (-not $TestParams) {
-        Write-LogErr "Error: No TestParams provided"
-        Write-LogErr "       This script requires the Key & value test parameters"
+        LogErr "Error: No TestParams provided"
+        LogErr "       This script requires the Key & value test parameters"
         return "Aborted"
     }
     if (-not $RootDir) {
-        Write-LogErr "Warn : no RootDir test parameter was supplied"
+        LogErr "Warn : no RootDir test parameter was supplied"
     } else {
         Set-Location $RootDir
     }
@@ -39,20 +38,21 @@ function Main {
     $params = $TestParams.Split(";")
     foreach ($p in $params) {
         $fields = $p.Split("=")
-
+        
         switch ($fields[0].Trim()) {
             "key"        { $key       = $fields[1].Trim() }
             "value"      { $value     = $fields[1].Trim() }
+            "tc_covered" { $tcCovered = $fields[1].Trim() }
         default   {}  # unknown param - just ignore it
         }
-    }
+    }        
 
     if (-not $key) {
-        Write-LogErr "Error: Missing testParam Key to be added"
+        LogErr "Error: Missing testParam Key to be added"
         return "FAIL"
     }
     if (-not $value) {
-        Write-LogErr "Error: Missing testParam Value to be added"
+        LogErr "Error: Missing testParam Value to be added"
         return "FAIL"
     }
 
@@ -60,33 +60,33 @@ function Main {
     $vmManagementService = Get-WmiObject -ComputerName $HvServer -class "Msvm_VirtualSystemManagementService" `
         -namespace "root\virtualization\v2"
     if (-not $vmManagementService) {
-        Write-LogErr "Error: Unable to create a VMManagementService object"
+        LogErr "Error: Unable to create a VMManagementService object"
         return "FAIL"
     }
 
     $vmGuest = Get-WmiObject -ComputerName $HvServer -Namespace root\virtualization\v2 `
         -Query "Select * From Msvm_ComputerSystem Where ElementName='$VMName'"
     if (-not $vmGuest) {
-        Write-LogErr "Error: Unable to create VMGuest object"
+        LogErr "Error: Unable to create VMGuest object"
         return "FAIL"
     }
 
     $msvmKvpExchangeDataItemPath = "\\$HvServer\root\virtualization\v2:Msvm_KvpExchangeDataItem"
     $msvmKvpExchangeDataItem = ([WmiClass]$msvmKvpExchangeDataItemPath).CreateInstance()
     if (-not $msvmKvpExchangeDataItem) {
-        Write-LogErr "Error: Unable to create Msvm_KvpExchangeDataItem object"
+        LogErr "Error: Unable to create Msvm_KvpExchangeDataItem object"
         return "FAIL"
     }
 
-    Write-LogInfo "Info : Detecting Host version of Windows Server"
+    LogMsg "Info : Detecting Host version of Windows Server"
     $osInfo = GWMI Win32_OperatingSystem -ComputerName $HvServer
     if (-not $osInfo) {
-        Write-LogErr "Error: Unable to collect Operating System information"
+        LogErr "Error: Unable to collect Operating System information"
         return "FAIL"
     }
     [System.Int32]$buildNR = $osInfo.BuildNumber
 
-    Write-LogInfo "Info : Modifying Key '${key}'to '${Value}'"
+    LogMsg "Info : Modifying Key '${key}'to '${Value}'"
 
     $msvmKvpExchangeDataItem.Source = 0
     $msvmKvpExchangeDataItem.Name = $key
@@ -100,17 +100,17 @@ function Main {
     }
 
     if ($job.ErrorCode -ne 0) {
-        Write-LogErr "Error: while modifying the key value pair"
-        Write-LogErr "Error: Job error code = $($Job.ErrorCode)"
+        LogErr "Error: while modifying the key value pair"
+        LogErr "Error: Job error code = $($Job.ErrorCode)"
 
-        if ($job.ErrorCode -eq 32773) {
-            Write-LogErr "Error (as expected): Key = '${key} ,Non-existing key cannot be modified Error Code-' $($Job.ErrorCode) "
+        if ($job.ErrorCode -eq 32773) {  
+            LogErr "Error (as expected): Key = '${key} ,Non-existing key cannot be modified Error Code-' $($Job.ErrorCode) "
             return "PASS"
         } elseIf ($job.ErrorCode -eq 32779 -And $buildNR -ge 10000) {
-            Write-LogErr "Error (as expected): Key = '${key} ,Non-existing key cannot be modified Error Code-' $($Job.ErrorCode) "
+            LogErr "Error (as expected): Key = '${key} ,Non-existing key cannot be modified Error Code-' $($Job.ErrorCode) "
             return "PASS"
         } else {
-            Write-LogErr "Error: Unable to modify key"
+            LogErr "Error: Unable to modify key"
             return "FAIL"
         }
     }
@@ -121,5 +121,5 @@ function Main {
     }
 }
 
-Main -VMName $AllVMData.RoleName -HvServer $GlobalConfig.Global.Hyperv.Hosts.ChildNodes[0].ServerName `
+Main -VMName $AllVMData.RoleName -HvServer $xmlConfig.config.Hyperv.Host.ServerName `
         -RootDir $WorkingDirectory -TestParams $TestParams

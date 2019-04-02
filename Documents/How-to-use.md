@@ -31,38 +31,6 @@ If you add a custom test menu, you will need to re-build the Jenkins menu, and t
             iv.  Add ‘LisaSupport@microsoft.com’ to ‘Reviewers’, or send email to 'lisasupport@microsoft.com'.
             v.   Once it is approved, you can merge the Pull Request to master branch. In this case, you will need 
                  to rebuild the menu by ‘<Partner name>-Refresh-Test-Selection-Menus’.
-    5. LISAv2 has defined some global variables. Test cases can use them as needed.
-        a. Read-only global variables
-            i. Common
-                $TestID : The unique ID of the test run
-                $WorkingDirectory: The current working directory of test run
-                $LogDir: The logging directory
-                $detectedDistro: The distro name of the test VM
-                $BaseOsVHD : The VHD name if the test runs with a VHD
-                $RGIdentifier: The ID included in the resource group name or HyperV group name
-                $TestLocation: The Azure region, HyperV servers or WSL host
-                $TestPlatform: Azure, HyperV or WSL
-                $user: The user name of the VM
-                $password: The password of the VM
-                $GlobalConfig: The global configuration xml
-                $XmlSecrets: The secret file xml
-                $resultPass: PASS
-                $resultFail: FAIL
-                $resultAborted: ABORTED
-                $resultSkipped: SKIPPED
-                $IsWindowsImage: Whether the test image is Windows
-
-            ii. For Azure
-                $ARMImageName: The ARM image name
-
-            iii. For HyperV
-                $HyperVInstanceSize: The VM size of VM on HyperV
-                $DependencyVmName: The name of the dependency VM for test on HyperV
-                $DependencyVmHost: The host name of the dependency VM for test on HyperV
-                $VMGeneration: VM generation, 1 or 2
-
-        b. Writeable global variables
-                $LogFileName: The name of the log file
 
 ## Verify a published image on Azure
 
@@ -83,7 +51,7 @@ If you add a custom test menu, you will need to re-build the Jenkins menu, and t
                'CustomVHDURL' text box.
             b. Leave 'Kernel' unchanged unless you would like to use customized kernel code or linux-next.
             c. Update the 3 options regarding how to select test cases; TestName, Category and Tag.
-                i. Supported platform: Azure, HyperV, and WSL.
+                i. Supported platform: Azure, etc.
                 ii. Available Category: BVT, Community, Functional, Performance, and Smoke.
                 iii. Available Tags: boot, bvt, disk, ext4, gpu, hv_netvsc, etc.
         6. Enter partner's email address for report notification.
@@ -122,13 +90,13 @@ This XML file defines the regions per Category. It may require specific region o
     for each maintenance / sharing.
         1. BVT.xml: BVT (Build Validation Test) test cases
         2. CommunityTests.xml: Tests from Open Source Community.
-        3. FunctionalTests-[FEATURE NAME].xml: Tests specific to a certain feature.
-        4. FunctionalTests.xml: Miscellaneous feature tests for other areas.
-        4. NestedVmTests.xml: Nested KVM and nested Hyper-V tests.
+        3. FunctionalTests.xml: Feature tests for SR-IOV, GPU, DPDK, etc.
         4. Other.xml: If any does not fall into existing Category, add to here.
-        5. PerformanceTests.xml: Performance test cases.
+        5. PerformanceTests.xml: Performance test cases
+        6. RegressionTests.xml: Add any tests for regression cycle.
         7. SmokeTests.xml: It will run before BVT test runs.
-        8. StressTests.xml: Network traffic and storage IO testing under heavy CPU and Memory stress.
+        8. StressTests.xml: Under development. Network traffic and stroage IO testing 
+        under heavy CPU and Memory stress.
 
     Here is the format inside of TestCases.xml file. TODO: Revise the definition, and required field or not.
     [Req] Required
@@ -139,7 +107,7 @@ This XML file defines the regions per Category. It may require specific region o
         <files></files>: If test requires data files, add the file names here [Opt]
         <setupType></setupType>: The name represents VM definition in <Category name>TestsConfigurations xml file, 
             VMConfigurations folder. [Req]
-        <Platform></Platform>: Supported platform names. Azure, HyperV, and WSL. [Req]
+        <Platform></Platform>: Supported platform names. Azure, HyperV, etc. [Req]
         <Category></Category>: Available Test Category [Req]
         <Area></Area>: Test Area [Req]
         <Tags></Tags>: Tag information seperated by comma [Opt]
@@ -158,17 +126,14 @@ Per Category, each XML file has VM name, Resource Group name, etc. We do not rec
     4. Test design may have two ways;
         a. A single PowerShell script execution: A single PowerShell script imports builtin library 
             modules and posts the result. For example, 'BVT-VERIFY-DEPLOYMENT-PROVISION.ps1' shows 
-            this script calls 'Deploy-VMs' function for its testing and collect the result
-            by 'Check-KernelLogs'. 'Deploy-VMs' and 'Check-KernelLogs' are functions definded
+            this script calls 'DeployVMs' function for its testing and collect the result 
+            by 'CheckKernelLogs'. 'DeployVMs' and 'CheckKernelLogs' are functions definded 
             in ./Libraries/CommonFunctions.psm1 module. 
             You can add new module or update existing ones for further development.
         b. PowerShell script wraps multiple non-PowerShell script like Bash or Python scripts: 
             Like 'VERIFY-TEST-SCRIPT-IN-LINUX-GUEST.ps1', the PowerShell script wraps the multiple 
-            Bash or Python script as a parameter of 'Run-LinuxCmd' function.
+            Bash or Python script as a parameter of 'RunLinuxCmd' function.
     5. Before PR review, we recommend you run script testing in cmdline/API mode. See above instruction.
-    6. Current tags in the Repo: bvt, network, nested, hv_storvsc, stress, disk, dpdk,
-        sriov, kvm, smb, storage, boot, pci_hyperv, core, wala, lsvmbus, synthetic, kvp,
-        gpu, hv_netvsc, ltp, lis, fcopy, memory, backup, gen2vm. They are all lowercases.
 
 ## Coding Style
 
@@ -183,70 +148,6 @@ Per Category, each XML file has VM name, Resource Group name, etc. We do not rec
         a. Log should be readable to reflect what’s happening in the test execution.
         b. Remove noise. Determine if it would be error or warning.
         c. Exception only in the case of fatal errors.
-    9. Recommended Bash & Python function name format - Function_Name(). Upper letter in each string connected
-        with underscore character. PowerShell function name format remains Verb-Entity() format like Get-VMSize().
-    10. Use the same terminology:
-        1. PASS
-        2. FAIL
-        3. ABORTED (all upper cases)
-    11. TestCase names in XML files are in all Capital.
-
-## Use recommended distro name
-
-    1. Short distro name in log, graph and script:
-        a. CentOS
-            CentOS Linux release 7.0.1406 (Core)
-            CentOS Linux release 7.1.1503 (Core)
-            CentOS Linux release 7.2.1511 (Core)
-            CentOS Linux release 7.3.1611 (Core)
-            CentOS Linux release 7.4.1708 (Core)
-            CentOS Linux release 7.5.1804 (Core)
-            CentOS release 6.5 (Final)
-            CentOS release 6.6 (Final)
-            CentOS release 6.7 (Final)
-            CentOS release 6.8 (Final)
-            CentOS release 6.9 (Final)
-            CentOS release 6.10 (Final)
-        b. ClearLinux
-            Clear Linux OS for Intel Architecture 1
-        c. Debian
-            Debian GNU/Linux 7 (wheezy)
-            Debian GNU/Linux 8 (jessie)
-            Debian GNU/Linux 9 (stretch)
-        d. OpenSUSE
-            openSUSE Leap 42.3
-        e. Oracle
-            Oracle Linux Server 6.8
-            Oracle Linux Server 6.9
-            Oracle Linux Server 7.3
-            Oracle Linux Server 7.4
-        f. RHEL
-            Red Hat Enterprise Linux Server release 6.7 (Santiago)
-            Red Hat Enterprise Linux Server release 6.8 (Santiago)
-            Red Hat Enterprise Linux Server release 6.9 (Santiago)
-            Red Hat Enterprise Linux Server release 6.10 (Santiago)
-            Red Hat Enterprise Linux Server release 7.2 (Maipo)
-            Red Hat Enterprise Linux Server release 7.3 (Maipo)
-            Red Hat Enterprise Linux Server release 7.4 (Maipo)
-            Red Hat Enterprise Linux Server release 7.5 (Maipo)
-        g. SLES
-            SUSE Linux Enterprise Server 11 SP4
-            SUSE Linux Enterprise Server 12 SP2
-            SUSE Linux Enterprise Server 12 SP3
-            SUSE Linux Enterprise Server 15
-        h. Ubuntu
-            Ubuntu 12.04.5 LTS, Precise Pangolin
-            Ubuntu 14.04.5 LTS, Trusty Tahr
-            Ubuntu 16.04.4 LTS (Xenial Xerus)
-            Ubuntu 16.04.5 LTS (Xenial Xerus)
-            Ubuntu 17.10 (Artful Aardvark)
-            Ubuntu 18.04 LTS (Bionic Beaver)
-            Ubuntu 18.04.1 LTS (Bionic Beaver)
-        j. CoreOS
-            CoreOS Linux (Stable)
-            CoreOS Linux (Alpha)
-            CoreOS Linux (Beta)
-    2. Add version number, project name or use full name if space is sufficient.
 
 ## Support Contact
 

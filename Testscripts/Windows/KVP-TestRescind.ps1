@@ -11,8 +11,7 @@
     the daemon is running on the VM.
 #>
 
-param([String] $TestParams,
-      [object] $AllVmData)
+param([String] $TestParams)
 
 function Main {
     param (
@@ -27,17 +26,17 @@ function Main {
     )
 
     if (-not $TestParams) {
-        Write-LogErr "Error: No test parameters specified"
+        LogErr "Error: No test parameters specified"
         return "Aborted"
     }
     if (-not $RootDir) {
-        Write-LogInfo "Warn : no rootdir was specified"
+        LogMsg "Warn : no rootdir was specified"
     } else {
         Set-Location $RootDir
     }
 
     # Debug - display the test parameters so they are captured in the log file
-    Write-LogInfo "TestParams : '${TestParams}'"
+    LogMsg "TestParams : '${TestParams}'"
 
     # Parse the test parameters
     $params = $TestParams.Split(";")
@@ -45,6 +44,7 @@ function Main {
         $fields = $p.Split("=")
         switch ($fields[0].Trim()) {
             "ipv4"      { $ipv4    = $fields[1].Trim() }
+            "TC_COVERED"   { $tcCovered = $fields[1].Trim() }
             "CycleCount"    { $CycleCount = $fields[1].Trim() }
             default  {}
         }
@@ -53,29 +53,29 @@ function Main {
     $checkVM = Check-Systemd -Ipv4 $Ipv4 -SSHPort $VMPort -Username $VMUserName `
                     -Password $VmPassword
     if ( -not $checkVM[-1]) {
-        Write-LogInfo "Systemd is not being used. Test Skipped"
+        LogMsg "Systemd is not being used. Test Skipped"
         return "FAIL"
     }
 
     # Get KVP Service status
     $gsi = Get-VMIntegrationService -Name "Key-Value Pair Exchange" -VMName $VMName -ComputerName $hvServer
     if ($? -ne "True") {
-        Write-LogInfo "Error: Unable to get Key-Value Pair status on $VMName ($hvServer)"
+        LogMsg "Error: Unable to get Key-Value Pair status on $VMName ($hvServer)"
         return "FAIL"
     }
 
     # Check if VM is RedHat 7.3 or later (and if not, check external LIS exists)
     $supportkernel = "3.10.0.514" #kernel version for RHEL 7.3
-    $null = .\Tools\plink.exe -C -pw $VMPassword -P $VMPort $VMUserName@$ipv4 "yum --version 2> /dev/null"
+    $isRHEL = .\Tools\plink.exe -C -pw $VMPassword -P $VMPort $VMUserName@$ipv4 "yum --version 2> /dev/null"
     if ($? -eq "True") {
         $kernelSupport = Get-VMFeatureSupportStatus -VmIp $ipv4 -VmPort $VMPort -UserName $VMUserName `
                             -Password $VMPassword -SupportKernel $supportkernel
         if ($kernelSupport -ne "True") {
-            Write-LogInfo "Info: Kernels older than 3.10.0-514 require LIS-4.x drivers."
-            $null = .\Tools\plink.exe -C -pw $VMPassword -P $VMPort $VMUserName@$ipv4 `
+            LogMsg "Info: Kernels older than 3.10.0-514 require LIS-4.x drivers."
+            $checkExternal = .\Tools\plink.exe -C -pw $VMPassword -P $VMPort $VMUserName@$ipv4 `
                                 "rpm -qa | grep kmod-microsoft-hyper-v && rpm -qa | grep microsoft-hyper-v"
             if ($? -ne "True") {
-                Write-LogInfo "Error: No LIS-4.x drivers detected. Skipping test."
+                LogMsg "Error: No LIS-4.x drivers detected. Skipping test."
                 return "FAIL"
             }
         }
@@ -85,7 +85,7 @@ function Main {
     if ($gsi.Enabled -ne "True") {
         Enable-VMIntegrationService -Name "Key-Value Pair Exchange" -VMName $VMName -ComputerName $hvServer
         if ($? -ne "True") {
-            Write-LogErr "Error: Unable to enable Key-Value Pair on $VMName ($hvServer)"
+            LogErr "Error: Unable to enable Key-Value Pair on $VMName ($hvServer)"
             return "FAIL"
         }
     }
@@ -95,26 +95,26 @@ function Main {
     while ($counter -lt $CycleCount) {
         Disable-VMIntegrationService -Name "Key-Value Pair Exchange" -VMName $VMName -ComputerName $hvServer
         if ($? -ne "True") {
-            Write-LogErr "Error: Unable to disable VMIntegrationService on $VMName ($hvServer) on $counter run"
+            LogErr "Error: Unable to disable VMIntegrationService on $VMName ($hvServer) on $counter run"
             return "FAIL"
         }
         Start-Sleep 5
 
         Enable-VMIntegrationService -Name "Key-Value Pair Exchange" -VMName $VMName -ComputerName $hvServer
         if ($? -ne "True") {
-            Write-LogInfo "Error: Unable to enable VMIntegrationService on $VMName ($hvServer) on $counter run"
+            LogMsg "Error: Unable to enable VMIntegrationService on $VMName ($hvServer) on $counter run"
             return "FAIL"
         }
         Start-Sleep 5
         $counter += 1
     }
 
-    Write-LogInfo "Disabled and Enabled KVP Exchange $counter times"
+    LogMsg "Disabled and Enabled KVP Exchange $counter times"
 
     #Check KVP service status after disable/enable
     $gsi = Get-VMIntegrationService -Name "Key-Value Pair Exchange" -VMName $VMName -ComputerName $hvServer
     if ($gsi.PrimaryOperationalStatus -ne "OK") {
-        Write-LogInfo "Error: Key-Value Pair service is not operational after disable/enable cycle. `
+        LogMsg "Error: Key-Value Pair service is not operational after disable/enable cycle. `
         Current status: $gsi.PrimaryOperationalStatus"
         return "FAIL"
     } else {
@@ -125,9 +125,9 @@ function Main {
         #If the KVP service is OK, check the KVP daemon on the VM
         $checkProcess = .\Tools\plink.exe -C -pw $VMPassword -P $VMPort $VMUserName@$ipv4 "systemctl is-active $daemonName"
         if ($checkProcess -ne "active") {
-             Write-LogErr "Error: $daemonName is not running on $VMName after disable/enable cycle"
+             LogErr "Error: $daemonName is not running on $VMName after disable/enable cycle"
         } else {
-            Write-LogInfo "Info: KVP service and $daemonName are operational after disable/enable cycle"
+            LogMsg "Info: KVP service and $daemonName are operational after disable/enable cycle"
         }
     }
 
@@ -137,11 +137,11 @@ function Main {
     if (-not $sts) {
          return "FAIL"
     }
-
+    
     return "PASS"
 }
 
-Main -VMName $AllVMData.RoleName -hvServer $GlobalConfig.Global.Hyperv.Hosts.ChildNodes[0].ServerName `
+Main -VMName $AllVMData.RoleName -hvServer $xmlConfig.config.Hyperv.Host.ServerName `
          -ipv4 $AllVMData.PublicIP -VMPort $AllVMData.SSHPort `
          -VMUserName $user -VMPassword $password -rootDir $WorkingDirectory `
          -testParams $testParams

@@ -1,54 +1,54 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-param([object] $AllVmData, [object] $CurrentTestData)
 
 function Main {
-    param([object] $AllVMData, [object] $CurrentTestData)
-    # Create test result
-    $currentTestResult = Create-TestResultObject
+    # Create test result 
+    $result = ""
+    $currentTestResult = CreateTestResultObject
     $resultArr = @()
 
     try {
         $testScript = "BVT-VERIFY-SSHD-CONFIG.py"
 
-        Copy-RemoteFiles -uploadTo $AllVMData.PublicIP -port $AllVMData.SSHPort -files $currentTestData.files -username $user -password $password -upload
-        Run-LinuxCmd -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort -command "chmod +x *" -runAsSudo | Out-Null
-
-        Write-LogInfo "Executing : ${testScript}"
-        $output=Run-LinuxCmd -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort -command "python ${testScript}" -runAsSudo
-        Run-LinuxCmd -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort -command "mv Runtime.log ${testScript}.log" -runAsSudo | Out-Null
-        Copy-RemoteFiles -download -downloadFrom $AllVMData.PublicIP -files "/home/$user/state.txt, /home/$user/Summary.log, /home/$user/${testScript}.log" -downloadTo $LogDir -port $AllVMData.SSHPort -username $user -password $password
+        RemoteCopy -uploadTo $AllVMData.PublicIP -port $AllVMData.SSHPort -files $currentTestData.files -username $user -password $password -upload
+        RunLinuxCmd -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort -command "chmod +x *" -runAsSudo
+        
+        LogMsg "Executing : ${testScript}"
+        $output=RunLinuxCmd -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort -command "$python_cmd ${testScript}" -runAsSudo
+        RunLinuxCmd -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort -command "mv Runtime.log ${testScript}.log" -runAsSudo
+        RemoteCopy -download -downloadFrom $AllVMData.PublicIP -files "/home/$user/state.txt, /home/$user/Summary.log, /home/$user/${testScript}.log" -downloadTo $LogDir -port $AllVMData.SSHPort -username $user -password $password
         $testResult = Get-Content $LogDir\Summary.log
         $testStatus = Get-Content $LogDir\state.txt
-        Write-LogInfo "Test result : $testResult"
+        LogMsg "Test result : $testResult"
 
         if ($output -imatch "CLIENT_ALIVE_INTERVAL_SUCCESS") {
-            Write-LogInfo "SSHD-CONFIG INFO :Client_Alive_Interval time is 180 Second"
+            LogMsg "SSHD-CONFIG INFO :Client_Alive_Interval time is 180 Second"
         } else {
             if ($output -imatch "CLIENT_ALIVE_INTERVAL_FAIL") {
-                Write-LogInfo "SSHD-CONFIG INFO :There is no Client_Alive_Interval time is 180 Second"
+                LogMsg "SSHD-CONFIG INFO :There is no Client_Alive_Interval time is 180 Second"
             }
             if ($output -imatch "CLIENT_ALIVE_INTERVAL_COMMENTED") {
-                Write-LogInfo "SSHD-CONFIG INFO :There is a commented line in CLIENT_INTERVAL_COMMENTED "
+                LogMsg "SSHD-CONFIG INFO :There is a commented line in CLIENT_INTERVAL_COMMENTED "
             }
         }
-
+        
         if ($testStatus -eq "TestCompleted") {
-            Write-LogInfo "Test Completed"
+            LogMsg "Test Completed"
         }
     } catch {
         $ErrorMessage =  $_.Exception.Message
         $ErrorLine = $_.InvocationInfo.ScriptLineNumber
-        Write-LogInfo "EXCEPTION : $ErrorMessage at line: $ErrorLine"
+        LogMsg "EXCEPTION : $ErrorMessage at line: $ErrorLine"
     } finally {
+        $metaData = ""
         if (!$testResult) {
             $testResult = "Aborted"
         }
         $resultArr += $testResult
     }
 
-    $currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
+    $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
     return $currentTestResult.TestResult
 }
 
-Main -AllVMData $AllVmData -CurrentTestData $CurrentTestData
+Main

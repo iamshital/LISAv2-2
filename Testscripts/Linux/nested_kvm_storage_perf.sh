@@ -25,20 +25,20 @@ done
 #
 # Constants/Globals
 #
-UTIL_FILE="./nested_vm_utils.sh"
+UTIL_FILE="./nested_kvm_utils.sh"
 CONSTANTS_FILE="./constants.sh"
 ImageName="nested.qcow2"
 
 . ${CONSTANTS_FILE} || {
     errMsg="Error: missing ${CONSTANTS_FILE} file"
-    LogMsg "${errMsg}"
-    Update_Test_State $ICA_TESTABORTED
+    log_msg "${errMsg}"
+    update_test_state $ICA_TESTABORTED
     exit 10
 }
 . ${UTIL_FILE} || {
     errMsg="Error: missing ${UTIL_FILE} file"
-    LogMsg "${errMsg}"
-    Update_Test_State $ICA_TESTABORTED
+    log_msg "${errMsg}"
+    update_test_state $ICA_TESTABORTED
     exit 10
 }
 
@@ -75,18 +75,22 @@ fi
 if [[ $RaidOption == 'RAID in L1' ]] || [[ $RaidOption == 'RAID in L2' ]] || [[ $RaidOption == 'No RAID' ]]; then
     echo "RaidOption is available"
 else
-    Update_Test_State $ICA_TESTABORTED
+    update_test_state $ICA_TESTABORTED
     echo "RaidOption $RaidOption is invalid"
     exit 0
 fi
 
 touch $logFolder/state.txt
-log_file=$logFolder/$(basename "$0").log
-touch $log_file
+touch $logFolder/`basename "$0"`.log
 
-Remove_Raid()
+log_msg()
 {
-    Log_Msg "INFO: Check and remove RAID first" $log_file
+    echo `date "+%b %d %Y %T"` : "$1" >> $logFolder/`basename "$0"`.log
+}
+
+remove_raid()
+{
+    log_msg "INFO: Check and remove RAID first"
     mdvol=$(cat /proc/mdstat | grep md | awk -F: '{ print $1 }')
     if [ -n "$mdvol" ]; then
         echo "/dev/${mdvol} already exist...removing first"
@@ -101,7 +105,7 @@ Remove_Raid()
     fi
 }
 
-Prepare_Nested_VM()
+prepare_nested_vm()
 {
     #Prepare command for start nested kvm
     cmd="qemu-system-x86_64 -machine pc-i440fx-2.0,accel=kvm -smp $NestedCpuNum -m $NestedMemMB -hda $ImageName -display none -device e1000,netdev=user.0 -netdev user,id=user.0,hostfwd=tcp::$HostFwdPort-:22 -enable-kvm -daemonize"
@@ -112,42 +116,39 @@ Prepare_Nested_VM()
     done
 
     #Prepare nested kvm
-    Start_Nested_VM -user $NestedUser -passwd $NestedUserPassword -port $HostFwdPort $cmd
-    Enable_Root -user $NestedUser -passwd $NestedUserPassword -port $HostFwdPort
-    Reboot_Nested_VM -user root -passwd $NestedUserPassword -port $HostFwdPort
+    start_nested_vm -user $NestedUser -passwd $NestedUserPassword -port $HostFwdPort $cmd
+    enable_root -user $NestedUser -passwd $NestedUserPassword -port $HostFwdPort
+    reboot_nested_vm -user root -passwd $NestedUserPassword -port $HostFwdPort
 }
 
-Run_Fio()
+run_fio()
 {
-    Log_Msg "Copy necessary scripts to nested VM" $log_file
+    log_msg "Copy necessary scripts to nested VM"
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./utils.sh -remote_path /root -cmd put
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./StartFioTest.sh -remote_path /root -cmd put
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./constants.sh -remote_path /root -cmd put
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./ParseFioTestLogs.sh -remote_path /root -cmd put
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./nested_kvm_perf_fio.sh -remote_path /root -cmd put
-    remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./fio_jason_parser.sh -remote_path /root -cmd put
-    remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./gawk -remote_path /root -cmd put
-    remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename ./JSON.awk -remote_path /root -cmd put
 
-    Log_Msg "Start to run StartFioTest.sh on nested VM" $log_file
+    log_msg "Start to run StartFioTest.sh on nested VM"
     remote_exec -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort '/root/StartFioTest.sh'
 }
 
-Collect_Logs()
+collect_logs()
 {
-    Log_Msg "Finished running StartFioTest.sh, start to collect logs" $log_file
+    log_msg "Finished running StartFioTest.sh, start to collect logs"
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename fioConsoleLogs.txt -remote_path "/root" -cmd get
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename runlog.txt -remote_path "/root" -cmd get
     remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename state.txt -remote_path "/root" -cmd get
-    state=$(cat state.txt)
-    Log_Msg "FIO Test state: $state" $log_file
+    state=`cat state.txt`
+    log_msg "FIO Test state: $state"
     if [ $state == 'TestCompleted' ]; then
         remote_exec -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort '/root/ParseFioTestLogs.sh'
         remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename FIOTest-*.tar.gz -remote_path "/root" -cmd get
         remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename perf_fio.csv -remote_path "/root" -cmd get
         remote_copy -host localhost -user root -passwd $NestedUserPassword -port $HostFwdPort -filename nested_properties.csv -remote_path "/root" -cmd get
     else
-        Update_Test_State $ICA_TESTFAILED
+        update_test_state $ICA_TESTFAILED
         exit 0
     fi
 }
@@ -155,16 +156,16 @@ Collect_Logs()
 ############################################################
 #   Main body
 ############################################################
-Update_Test_State $ICA_TESTRUNNING
+update_test_state $ICA_TESTRUNNING
 
 disks=$(ls -l /dev | grep sd[c-z]$ | awk '{print $10}')
-Remove_Raid
+remove_raid
 
 if [[ $RaidOption == 'RAID in L1' ]]; then
     mdVolume="/dev/md0"
     create_raid0 "$disks" $mdVolume
     if [ $? -ne 0 ]; then
-        Update_Test_State $ICA_TESTFAILED
+        update_test_state $ICA_TESTFAILED
         exit 0
     fi
     disks='md0'
@@ -172,22 +173,22 @@ fi
 
 for disk in ${disks}
 do
-    Log_Msg "set rq_affinity to 0 for device ${disk}" $log_file
+    log_msg "set rq_affinity to 0 for device ${disk}"
     echo 0 > /sys/block/${disk}/queue/rq_affinity
 done
 
-Install_KVM_Dependencies
+install_kvm_dependencies
 
-Download_Image_Files -destination_image_name $ImageName -source_image_url $NestedImageUrl
+download_image_files -destination_image_name $ImageName -source_image_url $NestedImageUrl
 
 #Prepare nested kvm
-Prepare_Nested_VM
+prepare_nested_vm
 
 #Run fio test
-Run_Fio
+run_fio
 
 #Collect test logs
-Collect_Logs
-Stop_Nested_VM
+collect_logs
+stop_nested_vm
 collect_VM_properties
-Update_Test_State $ICA_TESTCOMPLETED
+update_test_state $ICA_TESTCOMPLETED

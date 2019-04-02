@@ -7,7 +7,7 @@
 <#
 .SYNOPSIS
     This script copies VHD file to another storage account.
-    This script will do Create / Delete operation for storage accounts
+    This script will do Create / Delete operation for storage accounts 
     mentioned in .\XML\RegionAndStorageAccounts.xml
 
 .PARAMETER
@@ -27,34 +27,30 @@ param
 (
     [string]$RGIdentifier="LISAv2",
     [switch]$Create,
-    [string]$LogFileName = "ManageTestStorageAccounts.log",
     [switch]$Delete=$true
-
 )
-if (!$global:LogFileName){
-    Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-}
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
 
-try
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
+
+try 
 {
     if ( ( $Create -or $Delete ) -and !($Create -and $Delete))
     {
         if ( $Delete )
         {
             $Passphrase = Get-Random -Minimum 11111 -Maximum 999999
-            Write-LogInfo "*****************************************CAUTION*****************************************"
-            Write-LogInfo "You will be cleaniup all storage account mentioned in .\XML\RegionAndStorageAccounts.xml"
-            Write-LogInfo "There is no way to recover the data from deleted storage accounts."
-            Write-LogInfo "****************************************************************************************"
+            LogMsg "*****************************************CAUTION*****************************************"
+            LogMsg "You will be cleaniup all storage account mentioned in .\XML\RegionAndStorageAccounts.xml"
+            LogMsg "There is no way to recover the data from deleted storage accounts."
+            LogMsg "****************************************************************************************"
             $Choice = Read-Host -Prompt "Type $Passphrase to confirm"
             if ( $Choice -eq $Passphrase)
             {
-                Write-LogInfo "Proceeding for cleanup..."
+                LogMsg "Proceeding for cleanup..."
             }
-            else
+            else 
             {
-                Write-LogInfo "You entered wrong number. Exiting."
+                LogMsg "You entered wrong number. Exiting."  
                 exit 0
             }
         }
@@ -70,41 +66,41 @@ try
                     $Out = Get-AzureRmResourceGroup -Name $ResourceGroupName -ErrorAction SilentlyContinue
                     if ( ! $Out.ResourceGroupName )
                     {
-                        Write-LogInfo "$ResourceGroupName creating..."
+                        LogMsg "$ResourceGroupName creating..."
                         $Out = New-AzureRmResourceGroup -Name $ResourceGroupName -Location $Region -ErrorAction SilentlyContinue
                         if ($Out.ProvisioningState -eq "Succeeded")
                         {
-                            Write-LogInfo "$ResourceGroupName created successfully."
+                            LogMsg "$ResourceGroupName created successfully."
                         }
                     }
-                    else
+                    else 
                     {
-                        Write-LogInfo "$ResourceGroupName exists."
+                        LogMsg "$ResourceGroupName exists."
                     }
                     if ($RegionStorageMapping.AllRegions.$Region.StandardStorage)
                     {
-                        Write-LogInfo "Creating Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage)"
+                        LogMsg "Creating Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage)"
                         $Out = New-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $RegionStorageMapping.AllRegions.$Region.StandardStorage -SkuName Standard_LRS  -Location $Region
                         if ($out.ProvisioningState -eq "Succeeded")
                         {
-                            Write-LogInfo "Creating Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage) : Succeeded"
+                            LogMsg "Creating Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage) : Succeeded"
                         }
                         else
                         {
-                            Write-LogInfo "Creating Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage) : Failed"
+                            LogMsg "Creating Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage) : Failed"
                         }
                     }
                     if ($RegionStorageMapping.AllRegions.$Region.PremiumStorage)
                     {
-                        Write-LogInfo "Creating Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.PremiumStorage)"
+                        LogMsg "Creating Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.PremiumStorage)"
                         $Out = New-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $RegionStorageMapping.AllRegions.$Region.PremiumStorage -SkuName Premium_LRS -Location $Region
                         if ($out.ProvisioningState -eq "Succeeded")
                         {
-                            Write-LogInfo "Creating Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.PremiumStorage) : Succeeded"
+                            LogMsg "Creating Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.PremiumStorage) : Succeeded"
                         }
                         else
                         {
-                            Write-LogInfo "Creating Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage) : Failed"
+                            LogMsg "Creating Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage) : Failed"
                         }
                     }
                 }
@@ -112,15 +108,15 @@ try
                 {
                     if ($RegionStorageMapping.AllRegions.$Region.StandardStorage)
                     {
-                        Write-LogInfo "Removing Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage)"
-                        Remove-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $RegionStorageMapping.AllRegions.$Region.StandardStorage -Force  -Verbose
+                        LogMsg "Removing Standard_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.StandardStorage)"
+                        Remove-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $RegionStorageMapping.AllRegions.$Region.StandardStorage -Force  -Verbose           
                     }
                     if ($RegionStorageMapping.AllRegions.$Region.PremiumStorage)
                     {
-                        Write-LogInfo "Removing Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.PremiumStorage)"
+                        LogMsg "Removing Premium_LRS storage account : $($RegionStorageMapping.AllRegions.$Region.PremiumStorage)"
                         Remove-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $RegionStorageMapping.AllRegions.$Region.PremiumStorage -Force -Verbose
                     }
-                    Write-LogInfo "Removing $ResourceGroupName"
+                    LogMsg "Removing $ResourceGroupName"
                     Remove-AzureRMResourceGroup -Name $ResourceGroupName -Force -Verbose
                     $ExitCode = 0
                 }
@@ -129,18 +125,18 @@ try
     }
     else
     {
-        Write-LogInfo "Please provide either -Create or -Delete option."
+        LogMsg "Please provide either -Create or -Delete option."
     }
 
 }
 catch
 {
     $ExitCode = 1
-    Raise-Exception ($_)
+    ThrowExcpetion ($_)
 }
 finally
 {
-    Write-LogInfo "Exiting with code: $ExitCode"
+    LogMsg "Exiting with code: $ExitCode"
     exit $ExitCode
 }
 #endregion

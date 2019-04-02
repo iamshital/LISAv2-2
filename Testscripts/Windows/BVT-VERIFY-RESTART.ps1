@@ -1,48 +1,53 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
+﻿# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-param([object] $AllVmData)
 
 function Main {
-    param([object] $AllVMData)
-    # Create test result
-    $currentTestResult = Create-TestResultObject
+    # Create test result 
+    $result = ""
+    $currentTestResult = CreateTestResultObject
     $resultArr = @()
 
     try {
-        Write-LogInfo "Trying to restart $($AllVMData.RoleName)..."
-        $restartVM = Restart-AzureRmVM -ResourceGroupName $AllVMData.ResourceGroupName -Name $AllVMData.RoleName -Verbose
-        if ( $restartVM.Status -eq "Succeeded" ) {
-            $isVmAlive = Is-VmAlive -AllVMDataObject $AllVMData
-            if ($isVmAlive -eq "True") {
-                $isRestarted = $true
+        LogMsg "Trying to restart $($AllVMData.RoleName)..."
+        if ($UseAzureResourceManager) {
+            $restartVM = Restart-AzureRmVM -ResourceGroupName $AllVMData.ResourceGroupName -Name $AllVMData.RoleName -Verbose
+            if ( $restartVM.Status -eq "Succeeded" ) {
+                $isSSHOpened = isAllSSHPortsEnabledRG -AllVMDataObject $AllVMData
+                if ($isSSHOpened -eq "True") {
+                    $isRestarted = $true
+                } else {
+                    LogErr "VM is not available after restart"
+                    $isRestarted = $false
+                }
             } else {
-                Write-LogErr "VM is not available after restart"
                 $isRestarted = $false
+                LogErr "Restart Failed. Operation ID : $($restartVM.OperationId)"
             }
         } else {
-            $isRestarted = $false
-            Write-LogErr "Restart Failed. Operation ID : $($restartVM.OperationId)"
+            $out = RestartAllDeployments -DeployedServices $isDeployed
+            $isRestarted = $?
         }
         if ($isRestarted) {
-            Write-LogInfo "Virtual machine restart successful."
+            LogMsg "Virtual machine restart successful."
             $testResult = "PASS"
         } else {
-            Write-LogErr "Virtual machine restart failed."
+            LogErr "Virtual machine restart failed."
             $testResult = "FAIL"
         }
     } catch {
         $ErrorMessage =  $_.Exception.Message
         $ErrorLine = $_.InvocationInfo.ScriptLineNumber
-        Write-LogInfo "EXCEPTION : $ErrorMessage at line: $ErrorLine"
+        LogMsg "EXCEPTION : $ErrorMessage at line: $ErrorLine"
     } finally {
+        $metaData = ""
         if (!$testResult) {
             $testResult = "Aborted"
         }
         $resultArr += $testResult
-    }
+    }   
 
-    $currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
-    return $currentTestResult
+    $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+    return $currentTestResult.TestResult
 }
 
-Main -AllVMData $AllVmData
+Main

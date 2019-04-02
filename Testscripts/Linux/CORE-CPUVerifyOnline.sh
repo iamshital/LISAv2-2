@@ -8,6 +8,10 @@
 #	the /proc/cpuinfo file.
 #	The VM is configured with 4 CPU cores as part of the setup script,
 #	as each core can't be offline except vcpu0 for a successful test pass.
+
+CONSTANTS_FILE="constants.sh"
+nonCPU0inter=0
+
 . utils.sh || {
     echo "unable to source utils.sh!"
     echo "TestAborted" > state.txt
@@ -16,20 +20,29 @@
 
 UtilsInit
 
+# Source the constants file
+if [ -e ./${CONSTANTS_FILE} ]; then
+    source ${CONSTANTS_FILE}
+else
+    LogErr "no ${CONSTANTS_FILE} file"
+    SetTestStateFailed
+    exit 0
+fi
+
 # Getting the CPUs count
 cpu_count=$(grep -i processor -o /proc/cpuinfo | wc -l)
 UpdateSummary "${cpu_count} CPU cores detected"
 
 #
-# Verifying all CPUs can't be offline except CPU0
+# Verifying all CPUs can't be offline except CPU0 
 #
 for ((cpu=1 ; cpu<=$cpu_count ; cpu++)) ;do
     LogMsg "Checking the $cpu on /sys/device/...."
     __file_path="/sys/devices/system/cpu/cpu$cpu/online"
     if [ -e "$__file_path" ]; then
         echo 0 > $__file_path > /dev/null 2>&1
-        val=$(cat $__file_path)
-        if [ "$val" -ne 0 ]; then
+        val=`cat $__file_path`
+        if [ $val -ne 0 ]; then
             LogMsg "CPU core ${cpu} can't be offline."
         else
             LogErr "CPU ${cpu} can be offline!"

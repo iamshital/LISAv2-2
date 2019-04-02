@@ -3,6 +3,7 @@
 # Licensed under the Apache License.
 from azuremodules import *
 
+import sys
 
 def RunTest():
     UpdateState("TestRunning")

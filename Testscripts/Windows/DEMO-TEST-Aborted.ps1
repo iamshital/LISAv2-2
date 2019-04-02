@@ -1,6 +1,7 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
+﻿# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-$CurrentTestResult = Create-TestResultObject
+$result = ""
+$CurrentTestResult = CreateTestResultObject
 $resultArr = @()
 
 $isDeployed = "THIS-IS-DEMO-FAIL"
@@ -8,16 +9,17 @@ if ($isDeployed)
 {
 	try
 	{
-        Write-LogInfo "Test Result : Aborted."
+        LogMsg "Test Result : Aborted."
         $testResult = "Aborted"
 	}
 	catch
 	{
 		$ErrorMessage =  $_.Exception.Message
-		Write-LogInfo "EXCEPTION : $ErrorMessage"
+		LogMsg "EXCEPTION : $ErrorMessage"
 	}
 	Finally
 	{
+		$metaData = ""
 		if (!$testResult)
 		{
 			$testResult = "Aborted"
@@ -32,10 +34,10 @@ else
 	$resultArr += $testResult
 }
 
-$CurrentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
+$CurrentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
 
 #Clean up the setup
-Do-TestCleanUp -CurrentTestResult $CurrentTestResult -testName $currentTestData.testName -ResourceGroups $isDeployed
+DoTestCleanUp -CurrentTestResult $CurrentTestResult -testName $currentTestData.testName -ResourceGroups $isDeployed
 
 #Return the result and summery to the test suite script..
 return $CurrentTestResult

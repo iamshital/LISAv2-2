@@ -140,7 +140,7 @@ ConfigUbuntu()
         service chrony stop
         if [ $? -ne 0 ]; then
             LogErr "Unable to stop chrony"
-            SetTestStateFailed
+            UpdateTestState $ICA_TESTFAILED
             exit 0
         fi
 

@@ -10,8 +10,7 @@
     For SQM data to be retrieved, kvp process needs to be stopped on vm
 #>
 
-param([String] $TestParams,
-      [object] $AllVmData)
+param([string] $TestParams)
 
 function Stop-KVP {
     param (
@@ -21,24 +20,24 @@ function Stop-KVP {
         [String] $VMPassword,
         [String] $RootDir
     )
-
+    
     $cmdToVM = @"
 #!/bin/bash
     ps aux | grep kvp
     if [ `$? -ne 0 ]; then
-      echo "KVP is already disabled" >> /home/$VMUser/StopKVP.log 2>&1
+      echo "KVP is already disabled" >> /root/StopKVP.log 2>&1
       exit 0
     fi
 
     kvpPID=`$(ps aux | grep kvp | awk 'NR==1{print `$2}')
     if [ `$? -ne 0 ]; then
-        echo "Could not get PID of KVP" >> /home/$VMUser/StopKVP.log 2>&1
+        echo "Could not get PID of KVP" >> /root/StopKVP.log 2>&1
         exit 0
     fi
 
     kill `$kvpPID
     if [ `$? -ne 0 ]; then
-        echo "Could not stop KVP process" >> /home/$VMUser/StopKVP.log 2>&1
+        echo "Could not stop KVP process" >> /root/StopKVP.log 2>&1
         exit 0
     fi
 
@@ -55,11 +54,11 @@ function Stop-KVP {
     Add-Content $FILE_NAME "$cmdToVM"
 
     # send file
-    Copy-RemoteFiles -uploadTo $VMIpv4 -port $VMSSHPort -files $FILE_NAME `
-        -username $VMUser -password $VMPassword -upload
+    RemoteCopy -uploadTo $VMIpv4 -port $VMSSHPort -files $FILE_NAME `
+        -username "root" -password $VMPassword -upload
 
-    $retVal = Run-LinuxCmd -username $VMUser -password $VMPassword -ip $VMIpv4 -port $VMSSHPort `
-        -command "cd /home/$VMUser/ && chmod u+x ${FILE_NAME} && sed -i 's/\r//g' ${FILE_NAME} && ./${FILE_NAME}" -RunAsSudo
+    $retVal = RunLinuxCmd -username "root" -password $VMPassword -ip $VMIpv4 -port $VMSSHPort `
+        -command "cd /root && chmod u+x ${FILE_NAME} && sed -i 's/\r//g' ${FILE_NAME} && ./${FILE_NAME}"
 
     return $retVal
 }
@@ -75,11 +74,11 @@ function Main {
         $RootDir,
         $TestParams
     )
-
+    
     $intrinsic = $True
-
+    
     # Debug - display the test parameters so they are captured in the log file
-    Write-LogInfo "TestParams : '${TestParams}'"
+    LogMsg "TestParams : '${TestParams}'"
 
     # Parse the test parameters
     $params = $TestParams.Split(";")
@@ -87,21 +86,24 @@ function Main {
         $fields = $p.Split("=")
         switch ($fields[0].Trim()) {
             "nonintrinsic" { $intrinsic = $False }
+            "TC_COVERED"   { $tcCovered = $fields[1].Trim() }
             default  {}
         }
     }
 
+    LogMsg "Covers: ${tcCovered}"
+
     # Get host build number
     $buildNumber = Get-HostBuildNumber $HvServer
     if ($buildNumber -eq 0) {
-        Write-LogErr "Error: Wrong Windows build number"
+        LogErr "Error: Wrong Windows build number"
         return "Aborted"
     }
 
     # Verify the Data Exchange Service is enabled for this VM
     $des = Get-VMIntegrationService -VMName $VMName -ComputerName $HvServer
     if (-not $des) {
-        Write-LogErr "Error: Data Exchange Service is not enabled for this VM"
+        LogErr "Error: Data Exchange Service is not enabled for this VM"
         return "FAIL"
     }
     $serviceEnabled = $False
@@ -112,7 +114,7 @@ function Main {
         }
     }
     if (-not $serviceEnabled) {
-        Write-LogErr "Error: The Data Exchange Service is not enabled for VM '${VMName}'"
+        LogErr "Error: The Data Exchange Service is not enabled for VM '${VMName}'"
         return "FAIL"
     }
 
@@ -120,7 +122,7 @@ function Main {
     $retVal = Stop-KVP -vmIpv4 $Ipv4 -VMSSHPort $VMPort -VMUser $VMUserName `
         -VMPassword $VMPassword -RootDir $RootDir
     if (-not $retVal) {
-        Write-LogErr "Failed to stop KVP process on VM"
+        LogErr "Failed to stop KVP process on VM"
         return "FAIL"
     }
 
@@ -128,36 +130,36 @@ function Main {
     $vm = Get-WmiObject -ComputerName $HvServer -Namespace root\virtualization\v2 `
             -Query "Select * From Msvm_ComputerSystem Where ElementName=`'$VMName`'"
     if (-not $vm) {
-        Write-LogErr"Error: Unable to the VM '${VMName}' on the local host"
+        LogErr"Error: Unable to the VM '${VMName}' on the local host"
         return "FAIL"
     }
 
     $kvp = Get-WmiObject -ComputerName $HvServer -Namespace root\virtualization\v2 `
             -Query "Associators of {$vm} Where AssocClass=Msvm_SystemDevice ResultClass=Msvm_KvpExchangeComponent"
     if (-not $kvp) {
-        Write-LogErr "Error: Unable to retrieve KVP Exchange object for VM '${VMName}'"
+        LogErr "Error: Unable to retrieve KVP Exchange object for VM '${VMName}'"
         return "FAIL"
     }
 
     if ($intrinsic) {
-        Write-LogInfo "Intrinsic Data"
+        LogMsg "Intrinsic Data"
         $kvpData = $kvp.GuestIntrinsicExchangeItems
     } else {
-        Write-LogInfo "Non-Intrinsic Data"
+        LogMsg "Non-Intrinsic Data"
         $kvpData = $kvp.GuestExchangeItems
     }
-
+    
     #after disable KVP on vm, $kvpData is empty on hyper-v 2012 host
     if (-not $kvpData -and $buildNumber -lt 9600 ) {
         return "FAIL"
     }
 
     $dict = Convert-KvpToDict $kvpData
-
+    
     # Write out the kvp data so it appears in the log file
     foreach ($key in $dict.Keys) {
         $value = $dict[$key]
-        Write-LogInfo ("  {0,-27} : {1}" -f $key, $value)
+        LogMsg ("  {0,-27} : {1}" -f $key, $value)
     }
 
     if ($intrinsic) {
@@ -165,24 +167,24 @@ function Main {
         $osSpecificKeyNames = $null
 
         if ($buildNumber -ge 9600) {
-            $osSpecificKeyNames = @("OSDistributionName", "OSDistributionData",
+            $osSpecificKeyNames = @("OSDistributionName", "OSDistributionData", 
                                     "OSPlatformId","OSKernelVersion")
         } else {
-            $osSpecificKeyNames = @("OSBuildNumber", "ServicePackMajor", "OSVendor",
+            $osSpecificKeyNames = @("OSBuildNumber", "ServicePackMajor", "OSVendor", 
                                     "OSMajorVersion", "OSMinorVersion", "OSSignature")
         }
         foreach ($key in $osSpecificKeyNames) {
             if (-not $dict.ContainsKey($key)) {
-                Write-LogErr "Error: The key '${key}' does not exist"
+                LogErr "Error: The key '${key}' does not exist"
                 return "FAIL"
             }
         }
     } else {
         if ($dict.length -gt 0) {
-            Write-LogInfo "Info: $($dict.length) non-intrinsic KVP items found"
+            LogMsg "Info: $($dict.length) non-intrinsic KVP items found"
             return "FAIL"
         } else {
-            Write-LogErr "Error: No non-intrinsic KVP items found"
+            LogErr "Error: No non-intrinsic KVP items found"
             return "FAIL"
         }
     }
@@ -190,7 +192,7 @@ function Main {
     return "PASS"
 }
 
-Main -VMName $AllVMData.RoleName -HvServer $GlobalConfig.Global.Hyperv.Hosts.ChildNodes[0].ServerName `
+Main -VMName $AllVMData.RoleName -HvServer $xmlConfig.config.Hyperv.Host.ServerName `
          -Ipv4 $AllVMData.PublicIP -VMPort $AllVMData.SSHPort `
          -VMUserName $user -VMPassword $password -RootDir $WorkingDirectory `
          -TestParams $TestParams

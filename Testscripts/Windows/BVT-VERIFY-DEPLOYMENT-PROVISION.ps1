@@ -1,61 +1,49 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
+﻿# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
 
-param([object] $AllVmData, [object] $CurrentTestData, [object] $TestProvider)
-
 function Main {
-	param([object] $allVMData, [object] $CurrentTestData, [object] $TestProvider)
 	try {
-		$CurrentTestResult = Create-TestResultObject
-		$CurrentTestResult.TestSummary += New-ResultSummary -testResult "PASS" -metaData "FirstBoot" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-		Write-LogInfo "Check 1: Checking call tracess again after 30 seconds sleep"
-		Start-Sleep 30
-		$noIssues = Check-KernelLogs -allVMData $allVMData
-		if ($noIssues) {
-			$CurrentTestResult.TestSummary += New-ResultSummary -testResult "PASS" -metaData "FirstBoot : Call Trace Verification" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-			$RestartStatus = $TestProvider.RestartAllDeployments($allVMData)
-			if($RestartStatus -eq "True") {
-				$CurrentTestResult.TestSummary += New-ResultSummary -testResult "PASS" -metaData "Reboot" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-				Write-LogInfo "Check 2: Checking call tracess again after Reboot > 30 seconds sleep"
-				Start-Sleep 30
-				$noIssues = Check-KernelLogs -allVMData $allVMData
-				if ($noIssues) {
-					$CurrentTestResult.TestSummary += New-ResultSummary -testResult "PASS" -metaData "Reboot : Call Trace Verification" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-					Write-LogInfo "Test Result : PASS."
-					$testResult = "PASS"
-				}
-				else {
-					$CurrentTestResult.TestSummary += New-ResultSummary -testResult "FAIL" -metaData "Reboot : Call Trace Verification" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-					Write-LogInfo "Test Result : FAIL."
-					$testResult = "FAIL"
-				}
-			}
-			else {
-				$CurrentTestResult.TestSummary += New-ResultSummary -testResult "FAIL" -metaData "Reboot" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-				Write-LogInfo "Test Result : FAIL."
-				$testResult = "FAIL"
-			}
-
-		}
-		else {
-			$CurrentTestResult.TestSummary += New-ResultSummary -testResult "FAIL" -metaData "FirstBoot : Call Trace Verification" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
-			Write-LogInfo "Test Result : FAIL."
-			$testResult = "FAIL"
-		}
+		$counter = 1
+		LogMsg "Your VMs are ready to use..."
+        foreach ( $item in $isDeployed.Split("^") )
+        {
+            $currentTestResult.TestSummary +=  CreateResultSummary -testResult "$item" -metaData "Resource Group" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+			$subID = $($xmlConfig.config.Azure.General.SubscriptionID)
+			$subID = $subID.Trim()
+            $currentTestResult.TestSummary +=  CreateResultSummary -testResult "https://ms.portal.azure.com/#resource/subscriptions/$subID/resourceGroups/$item/overview" -metaData "WebURL" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+        }
+        foreach ( $vm in $allVMData )
+        {
+            
+            if ( $GuestOSType -eq "Linux" )
+            {
+                LogMsg "VM #$counter`: $($vm.PublicIP):$($vm.SSHPort)"
+                $currentTestResult.TestSummary +=  CreateResultSummary -testResult "$($vm.Status)" -metaData "VM #$counter` : $($vm.PublicIP) : $($vm.SSHPort) " -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+            }
+            else
+            {
+                LogMsg "VM #$counter`: $($vm.PublicIP):$($vm.RDPPort)"
+                $currentTestResult.TestSummary +=  CreateResultSummary -testResult "$($vm.Status)" -metaData "VM #$counter` : $($vm.PublicIP) : $($vm.RDPPort) " -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+            }
+            $counter++
+        }
+		LogMsg "Test Result : PASS."
+		$testResult = "PASS"
 	}
 	catch {
 		$ErrorMessage =  $_.Exception.Message
-		Write-LogInfo "EXCEPTION : $ErrorMessage"
+		LogMsg "EXCEPTION : $ErrorMessage"
 	}
 	Finally {
+		$metaData = ""
 		if (!$testResult) {
 			$testResult = "Aborted"
 		}
 		$resultArr += $testResult
 	}
 
-    $currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
-    return $currentTestResult
+    $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+    return $currentTestResult.TestResult
 }
 
-Main -allVMData $AllVmData -CurrentTestData $CurrentTestData -TestProvider $TestProvider
+Main

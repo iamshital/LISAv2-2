@@ -20,13 +20,15 @@
 
 CONSTANTS_FILE="./constants.sh"
 UTIL_FILE="./utils.sh"
+ICA_TESTRUNNING="TestRunning"	  # The test is running
 ICA_TESTCOMPLETED="TestCompleted"  # The test completed successfully
 ICA_TESTABORTED="TestAborted"	  # Error during the setup of the test
+ICA_TESTFAILED="TestFailed"		# Error occurred during the test
 touch ./IPERF3Test.log
 
 LogMsg()
 {
-	echo $(date "+%b %d %Y %T") : "${1}"	# Add the time stamp to the log message
+	echo `date "+%b %d %Y %T"` : "${1}"	# Add the time stamp to the log message
 	echo "${1}" >> ./IPERF3Test.log
 }
 
@@ -48,14 +50,14 @@ UpdateTestState()
 	exit 10
 }
 
-if [ ! "${server}" ]; then
+if [ ! ${server} ]; then
 	errMsg="Please add/provide value for server in constants.sh. server=<server ip>"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
 	UpdateTestState $ICA_TESTABORTED
 	exit 1
 fi
-if [ ! "${client}" ]; then
+if [ ! ${client} ]; then
 	errMsg="Please add/provide value for client in constants.sh. client=<client ip>"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -63,7 +65,7 @@ if [ ! "${client}" ]; then
 	exit 1
 fi
 
-if [ ! "${testDuration}" ]; then
+if [ ! ${testDuration} ]; then
 	errMsg="Please add/provide value for testDuration in constants.sh. testDuration=60"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -71,7 +73,7 @@ if [ ! "${testDuration}" ]; then
 	exit 1
 fi
 
-if [ ! "${testType}" ]; then
+if [ ! ${testType} ]; then
 	errMsg="Please add/provide value for testType in constants.sh. testType=tcp/udp"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -79,7 +81,7 @@ if [ ! "${testType}" ]; then
 	exit 1
 fi
 
-if [ ! "${max_parallel_connections_per_instance}" ]; then
+if [ ! ${max_parallel_connections_per_instance} ]; then
 	errMsg="Please add/provide value for max_parallel_connections_per_instance in constants.sh. max_parallel_connections_per_instance=60"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -87,7 +89,7 @@ if [ ! "${max_parallel_connections_per_instance}" ]; then
 	exit 1
 fi
 
-if [ ! "${connections}" ]; then
+if [ ! ${connections} ]; then
 	errMsg="Please add/provide value for connections in constants.sh. connections=(1 2 4 8 ....)"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -95,7 +97,7 @@ if [ ! "${connections}" ]; then
 	exit 1
 fi
 
-if [ ! "${bufferLengths}" ]; then
+if [ ! ${bufferLengths} ]; then
 	errMsg="Please add/provide value for bufferLengths in constants.sh. bufferLengths=(1 8). Note buffer lenghs are in Bytest"
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -103,7 +105,7 @@ if [ ! "${bufferLengths}" ]; then
 	exit 1
 fi
 
-if [ ! "${IPversion}" ]; then
+if [ ! ${IPversion} ]; then
 	errMsg="Please add/provide value for IPversion in constants.sh. IPversion=4/6."
 	LogMsg "${errMsg}"
 	echo "${errMsg}" >> ./summary.log
@@ -111,15 +113,15 @@ if [ ! "${IPversion}" ]; then
 	exit 1
 fi
 
-if [ "$IPversion" -eq 6 ]; then
-	if [ ! "${serverIpv6}" ]; then
+if [ $IPversion -eq 6 ]; then
+	if [ ! ${serverIpv6} ]; then
 		errMsg="Please add/provide value for serverIpv6 in constants.sh"
 		LogMsg "${errMsg}"
 		echo "${errMsg}" >> ./summary.log
 		UpdateTestState $ICA_TESTABORTED
 		exit 1
 	fi
-	if [ ! "${clientIpv6}" ]; then
+	if [ ! ${clientIpv6} ]; then
 		errMsg="Please add/provide value for clientIpv6 in constants.sh."
 		LogMsg "${errMsg}"
 		echo "${errMsg}" >> ./summary.log
@@ -135,7 +137,8 @@ fi
 #Make & build IPERF3 on client and server Machine
 
 LogMsg "Configuring client ${client}..."
-ssh "${client}" ". $UTIL_FILE && install_iperf3 $IPversion"
+ssh ${client} ". $UTIL_FILE && install_iperf3 $IPversion"
+ssh ${client} "which iperf3"
 if [ $? -ne 0 ]; then
 	LogMsg "Error: iperf installation failed in ${client}.."
 	UpdateTestState "TestAborted"
@@ -143,24 +146,17 @@ if [ $? -ne 0 ]; then
 fi
 
 LogMsg "Configuring server ${server}..."
-ssh "${server}" ". $UTIL_FILE && install_iperf3 $IPversion"
+ssh ${server} ". $UTIL_FILE && install_iperf3 $IPversion"
+ssh ${server} "which iperf3"
 if [ $? -ne 0 ]; then
 	LogMsg "Error: iperf installation failed in ${server}.."
 	UpdateTestState "TestAborted"
 	exit 1
 fi
 
-if [[ $(detect_linux_distribution) == coreos ]]; then
-	iperf3_cmd="docker run --network host lisms/iperf3"
-	ssh root@"${server}" ". $UTIL_FILE && Delete_Containers"
-	ssh root@"${client}" ". $UTIL_FILE && Delete_Containers"
-else
-	iperf3_cmd="iperf3"
-fi
-
-ssh "${server}" "rm -rf iperf-server-*"
-ssh "${client}" "rm -rf iperf-client-*"
-ssh "${client}" "rm -rf iperf-server-*"
+ssh ${server} "rm -rf iperf-server-*"
+ssh ${client} "rm -rf iperf-client-*"
+ssh ${client} "rm -rf iperf-server-*"
 
 
 #connections=(1 2 4 8 16 32 64 128 256 512 1024)
@@ -169,7 +165,7 @@ ssh "${client}" "rm -rf iperf-server-*"
 
 for current_buffer in "${bufferLengths[@]}"; do
 	for current_test_connections in "${connections[@]}"; do
-		if [ "$current_test_connections" -lt "$max_parallel_connections_per_instance" ]; then
+		if [ $current_test_connections -lt $max_parallel_connections_per_instance ]; then
 			num_threads_P=$current_test_connections
 			num_threads_n=1
 		else
@@ -177,16 +173,16 @@ for current_buffer in "${bufferLengths[@]}"; do
 			num_threads_n=$(($current_test_connections / $num_threads_P))
 		fi
 		
-		Kill_Process "${server}" iperf3
-		Kill_Process "${client}" iperf3
+		ssh ${server} "killall iperf3"
+		ssh ${client} "killall iperf3"
 		LogMsg "Starting $num_threads_n iperf3 server instances on $server.."
 		startPort=750
 		currentPort=$startPort
 		currentIperfInstanses=0
 		while [ $currentIperfInstanses -lt $num_threads_n ]; do
 			currentIperfInstanses=$(($currentIperfInstanses+1))
-			serverCommand="${iperf3_cmd} -s -1 -J -i10 -f g -p ${currentPort} > iperf-server-${testType}-IPv${IPversion}-buffer-${current_buffer}-conn-$current_test_connections-instance-${currentIperfInstanses}.txt 2>&1"
-			ssh "${server}" "$serverCommand" &
+			serverCommand="iperf3 -s -1 -J -i10 -f g -p ${currentPort} > iperf-server-${testType}-IPv${IPversion}-buffer-${current_buffer}-conn-$current_test_connections-instance-${currentIperfInstanses}.txt 2>&1"
+			ssh ${server} $serverCommand &
 			LogMsg "Executed: $serverCommand"
 			currentPort=$(($currentPort+1))
 			sleep 0.1
@@ -198,7 +194,7 @@ for current_buffer in "${bufferLengths[@]}"; do
 		startPort=750
 		currentPort=$startPort
 		currentIperfInstanses=0
-		if [ "$IPversion" -eq 4 ]; then
+		if [ $IPversion -eq 4 ]; then
 			testServer=$server
 		else
 			testServer=$serverIpv6
@@ -209,33 +205,33 @@ for current_buffer in "${bufferLengths[@]}"; do
 			currentIperfInstanses=$(($currentIperfInstanses+1))
 
 			if [[ "$testType" == "udp" ]]; then
-				clientCommand="${iperf3_cmd} -c $testServer -u -b 0 -J -f g -i10 -l ${current_buffer} -t ${testDuration} -p ${currentPort} -P $num_threads_P -${IPversion} > iperf-client-${testType}-IPv${IPversion}-buffer-${current_buffer}-conn-$current_test_connections-instance-${currentIperfInstanses}.txt 2>&1"
+				clientCommand="iperf3 -c $testServer -u -b 0 -J -f g -i10 -l ${current_buffer} -t ${testDuration} -p ${currentPort} -P $num_threads_P -${IPversion} > iperf-client-${testType}-IPv${IPversion}-buffer-${current_buffer}-conn-$current_test_connections-instance-${currentIperfInstanses}.txt 2>&1"
 			fi
 			if [[ "$testType" == "tcp" ]]; then
-				clientCommand="${iperf3_cmd} -c $testServer -b 0 -J -f g -i10 -l ${current_buffer} -t ${testDuration} -p ${currentPort} -P $num_threads_P -${IPversion} > iperf-client-${testType}-IPv${IPversion}-buffer-${current_buffer}-conn-$current_test_connections-instance-${currentIperfInstanses}.txt 2>&1"
+				clientCommand="iperf3 -c $testServer -b 0 -J -f g -i10 -l ${current_buffer} -t ${testDuration} -p ${currentPort} -P $num_threads_P -${IPversion} > iperf-client-${testType}-IPv${IPversion}-buffer-${current_buffer}-conn-$current_test_connections-instance-${currentIperfInstanses}.txt 2>&1"
 			fi
 			
-			ssh "${client}" "$clientCommand" &
+			ssh ${client} $clientCommand &
 			LogMsg "Executed: $clientCommand"
 			currentPort=$(($currentPort+1))
 			sleep 0.1
 		done
 		LogMsg "Iperf3 running buffer ${current_buffer}Bytes $num_threads_P X $num_threads_n ..."
-		sleep "${testDuration}"
+		sleep ${testDuration}
 		timeoutSeconds=900
 		sleep 5
-		var=$(ps -C "${iperf3_cmd} -c" --no-headers | wc -l)
-		echo "$var"
+		var=`ps -C "iperf3 -c" --no-headers | wc -l`
+		echo $var
 		while [[ $var -gt 0 ]]; do
-			timeoutSeconds=$(expr $timeoutSeconds - 1)
-			if [ "$timeoutSeconds" -eq 0 ]; then
+			timeoutSeconds=`expr $timeoutSeconds - 1`
+			if [ $timeoutSeconds -eq 0 ]; then
 				LogMsg "Iperf3 running buffer ${current_buffer}K $num_threads_P X $num_threads_n. Timeout."
 				LogMsg "killing all iperf3 client threads."
-				Kill_Process "${client}" iperf3
+				killall iperf3
 				sleep 1
 			else
 				sleep 1
-				var=$(ps -C "${iperf3_cmd} -c" --no-headers | wc -l)
+				var=`ps -C "iperf3 -c" --no-headers | wc -l`
 				LogMsg "Iperf3 running buffer ${current_buffer}K $num_threads_P X $num_threads_n. Waiting to finish $var instances."
 			fi
 		done
@@ -244,5 +240,5 @@ for current_buffer in "${bufferLengths[@]}"; do
 		LogMsg "Iperf3 Finished buffer ${current_buffer}  $num_threads_P X $num_threads_n ..."
 	done
 done
-scp "${server}":iperf-server-* ./
-UpdateTestState $ICA_TESTCOMPLETED
+scp ${server}:iperf-server-* ./
+UpdateTestState ICA_TESTCOMPLETED

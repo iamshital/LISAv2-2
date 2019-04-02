@@ -1,9 +1,10 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
+﻿# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
 
 function Main {
-    # Create test result
-    $currentTestResult = Create-TestResultObject
+    # Create test result 
+    $result = ""
+    $currentTestResult = CreateTestResultObject
     $resultArr = @()
 
     try {
@@ -17,23 +18,24 @@ function Main {
         $hs1ServiceUrl = $hs1vm1.DNSName
         $hs1ServiceUrl = $hs1ServiceUrl.Replace("http://","")
         $hs1ServiceUrl = $hs1ServiceUrl.Replace("/","")
-        Write-LogInfo "Uploading $testFile to $uploadTo, port $port using PrivateKey authentication"
+        $hs1vm1Hostname =  $hs1vm1.Name
+        LogMsg "Uploading $testFile to $uploadTo, port $port using PrivateKey authentication"
         $successCount = 0
         for ($i = 0; $i -lt 16; $i++) {
             try {
-                Write-LogInfo "Privatekey Authentication Verification loop : $i : STARTED"
+                LogMsg "Privatekey Authentication Verification loop : $i : STARTED"
                 Set-Content -Value "PrivateKey Test" -Path "$logDir\test-file-$i.txt" | Out-Null
-                Copy-RemoteFiles -uploadTo $hs1VIP -port $hs1vm1sshport -username $user -password $password -files "$logDir\test-file-$i.txt" -upload -usePrivateKey
+                RemoteCopy -uploadTo $hs1VIP -port $hs1vm1sshport -username $user -password $password -files "$logDir\test-file-$i.txt" -upload -usePrivateKey
                 Remove-Item -Path "$logDir\test-file-$i.txt" | Out-Null
-                Copy-RemoteFiles -downloadFrom $hs1VIP -port $hs1vm1sshport -username $user -password $password -downloadTo $logDir -files "/home/$user/test-file-$i.txt" -download -usePrivateKey
-                Write-LogInfo "Privatekey Authentication Verification loop : $i : SuCCESS"
+                RemoteCopy -downloadFrom $hs1VIP -port $hs1vm1sshport -username $user -password $password -downloadTo $logDir -files "/home/$user/test-file-$i.txt" -download -usePrivateKey
+                LogMsg "Privatekey Authentication Verification loop : $i : SuCCESS"
                 $successCount += 1
             } catch {
                 $testResult = "FAIL"
-                Write-LogInfo "Privatekey Authentication Verification loop : $i : FAILED"
+                LogMsg "Privatekey Authentication Verification loop : $i : FAILED"
             }
         }
-
+        
         if ($successCount -eq $i) {
             $testResult = "PASS"
         } else {
@@ -42,16 +44,17 @@ function Main {
     } catch {
         $ErrorMessage =  $_.Exception.Message
         $ErrorLine = $_.InvocationInfo.ScriptLineNumber
-        Write-LogInfo "EXCEPTION : $ErrorMessage at line: $ErrorLine"
+        LogMsg "EXCEPTION : $ErrorMessage at line: $ErrorLine"
     } finally {
+        $metaData = ""
         if (!$testResult) {
             $testResult = "Aborted"
         }
         $resultArr += $testResult
-    }
+    }   
 
-    $currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
-    return $currentTestResult
+    $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+    return $currentTestResult.TestResult
 }
 
 Main

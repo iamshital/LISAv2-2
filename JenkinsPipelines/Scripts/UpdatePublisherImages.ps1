@@ -12,27 +12,23 @@
     <Parameters>
 
 .INPUTS
-
+	
 
 .NOTES
-    Creation Date:
-    Purpose/Change:
+    Creation Date:  
+    Purpose/Change: 
 
 .EXAMPLE
 
 
 #>
 ###############################################################################################
-Param
-(
+Param 
+(    
     $OutputFilePath = "J:\Jenkins_Shared_Do_Not_Delete\userContent\common\VMImages-ARM.txt",
-    $Publishers = "Canonical,SUSE,Oracle,CoreOS,RedHat,OpenLogic,credativ,kali-linux,clear-linux-project",
-    $LogFileName = "UpdatePublisherImages.log"
+    $Publishers = "Canonical,SUSE,Oracle,CoreOS,RedHat,OpenLogic,credativ,kali-linux,clear-linux-project"
 )
-
-Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
 try
 {
     $ExitCode = 1
@@ -44,17 +40,17 @@ try
     foreach ( $newPub in $allRMPubs )
     {
         $offers = Get-AzureRmVMImageOffer -PublisherName $newPub -Location $Location
-        if ($offers)
+        if ($offers) 
         {
-            Write-LogInfo "Found $($offers.Count) offers for $($newPub)..."
+            LogMsg "Found $($offers.Count) offers for $($newPub)..."
             foreach ( $offer in $offers )
             {
                 $SKUs = Get-AzureRmVMImageSku -Location $Location -PublisherName $newPub -Offer $offer.Offer -ErrorAction SilentlyContinue
-                Write-LogInfo "|--Found $($SKUs.Count) SKUs for $($offer.Offer)..."
+                LogMsg "|--Found $($SKUs.Count) SKUs for $($offer.Offer)..."
                 foreach ( $SKU in $SKUs )
                 {
                     $rmImages = Get-AzureRmVMImage -Location $Location -PublisherName $newPub -Offer $offer.Offer -Skus $SKU.Skus
-                    Write-LogInfo "|--|--Found $($rmImages.Count) Images for $($SKU.Skus)..."
+                    LogMsg "|--|--Found $($rmImages.Count) Images for $($SKU.Skus)..."
                     if ( $rmImages.Count -gt 1 )
                     {
                         $isLatestAdded = $false
@@ -67,14 +63,14 @@ try
                     {
                         if ( $isLatestAdded )
                         {
-                            Write-LogInfo "|--|--|--Added Version $($rmImage.Version)..."
+                            LogMsg "|--|--|--Added Version $($rmImage.Version)..."
                             $ARMImages += $newPub + $tab + $offer.Offer + $tab + $SKU.Skus + $tab + $newPub + " " + $offer.Offer + " " + $SKU.Skus + " " + $rmImage.Version + "`n"
                         }
                         else
                         {
-                            Write-LogInfo "|--|--|--Added Generalized version: latest..."
+                            LogMsg "|--|--|--Added Generalized version: latest..."
                             $ARMImages += $newPub + $tab + $offer.Offer + $tab + $SKU.Skus + $tab + $newPub + " " + $offer.Offer + " " + $SKU.Skus + " " + "latest" + "`n"
-                            Write-LogInfo "|--|--|--Added Version $($rmImage.Version)..."
+                            LogMsg "|--|--|--Added Version $($rmImage.Version)..."
                             $ARMImages += $newPub + $tab + $offer.Offer + $tab + $SKU.Skus + $tab + $newPub + " " + $offer.Offer + " " + $SKU.Skus + " " + $rmImage.Version + "`n"
                             $isLatestAdded = $true
                         }
@@ -84,20 +80,20 @@ try
         }
     }
     $ARMImages = $ARMImages.TrimEnd("`n")
-    Write-LogInfo "Creating file $OutputFilePath..."
+    LogMsg "Creating file $OutputFilePath..."
     Set-Content -Value $ARMImages -Path $OutputFilePath -Force -NoNewline
-    Write-LogInfo "$OutputFilePath saved successfully."
+    LogMsg "$OutputFilePath Saved successfully."
     $ExitCode = 0
     #endregion
 }
-catch
+catch 
 {
     $ExitCode = 1
-    Raise-Exception ($_)
+    ThrowException ($_)
 }
 finally
 {
-    Write-LogInfo "Exiting with code: $ExitCode"
+    LogMsg "Exiting with code: $ExitCode"
     exit $ExitCode
 }
 #endregion

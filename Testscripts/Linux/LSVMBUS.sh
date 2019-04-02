@@ -39,24 +39,8 @@ if [[ "$DISTRO" =~ "redhat" ]] || [[ "$DISTRO" =~ "centos" ]]; then
     fi
 fi
 
-VCPU=$(nproc)
-LogMsg "Number of CPUs detected from this VM: $VCPU"
-
 # check if lsvmbus exists
 lsvmbus_path=$(which lsvmbus)
-if [ -z "$lsvmbus_path" ]; then
-    install_package wget
-    wget https://raw.githubusercontent.com/torvalds/linux/master/tools/hv/lsvmbus
-    chmod +x lsvmbus
-    if [[ "$DISTRO" =~ "coreos" ]]; then
-        export PATH=$PATH:/usr/share/oem/python/bin/
-        lsvmbus_path="./lsvmbus"
-    else
-        mv lsvmbus /usr/sbin
-        lsvmbus_path=$(which lsvmbus)
-    fi
-fi
-
 if [ -z "$lsvmbus_path" ]; then
     LogMsg "Error: lsvmbus tool not found!"
     SetTestStateFailed
@@ -68,12 +52,6 @@ if [ "$os_GENERATION" -eq "1" ]; then
     tokens+=("Synthetic IDE Controller")
 fi
 
-# python required for lsvmbus
-if ! which python; then
-    update_repos
-    install_package python
-fi
-
 for token in "${tokens[@]}"; do
     if ! $lsvmbus_path | grep "$token"; then
         LogMsg "Error: $token not found in lsvmbus information."
@@ -82,8 +60,8 @@ for token in "${tokens[@]}"; do
     fi
 done
 for optional_token in "${optional_tokens[@]}"; do
-    if ! $lsvmbus_path | grep "$optional_token"; then
-        LogMsg "INFO: $optional_token not found in lsvmbus information."
+    if ! $lsvmbus_path | grep "$token"; then
+        LogMsg "INFO: $token not found in lsvmbus information."
     fi
 done
 
@@ -107,7 +85,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         fi
     fi
 done < "lsvmbus.log"
-expected_scsi_counter=$(expr "$VCPU" / 4)
+expected_scsi_counter=$(expr $VCPU / 4)
 
 if [ "$network_counter" != "$VCPU" ] && [ "$scsi_counter" != "$expected_scsi_counter" ]; then
     error_msg="Error: values are wrong. Expected for network adapter: $VCPU and actual: $network_counter;

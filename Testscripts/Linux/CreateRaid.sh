@@ -1,8 +1,7 @@
 #!/bin/bash
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-DISTRO=$(grep -ihs "buntu\|Suse\|Fedora\|Debian\|CentOS\|Red Hat Enterprise Linux\|clear-linux-os" /etc/{issue,*release,*version} /usr/lib/os-release)
-
+DISTRO=`grep -ihs "buntu\|Suse\|Fedora\|Debian\|CentOS\|Red Hat Enterprise Linux" /etc/{issue,*release,*version}`
 if [[ $DISTRO =~ "SUSE Linux Enterprise Server 12" ]];
 then
     mdVolume="/dev/md/mdauto0"
@@ -13,6 +12,8 @@ mountDir="/data"
 raidFileSystem="ext4"
 
 #Install Required Packages.
+DISTRO=`grep -ihs "buntu\|Suse\|Fedora\|Debian\|CentOS\|Red Hat Enterprise Linux\|clear-linux-os" /etc/{issue,*release,*version} /usr/lib/os-release`
+
 if [[ $DISTRO =~ "Ubuntu" ]] || [[ $DISTRO =~ "Debian" ]];
 then
     echo "Detected UBUNTU/Debian. Installing required packages"
@@ -50,9 +51,9 @@ then
     rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
     yum -y --nogpgcheck install mdadm
 
-elif [[ $DISTRO =~ "SUSE Linux Enterprise Server" ]];
+elif [[ $DISTRO =~ "SUSE Linux Enterprise Server 12" ]];
 then
-    echo "Detected SLES. Installing required packages"
+    echo "Detected SLES12. Installing required packages"
     zypper addrepo http://download.opensuse.org/repositories/benchmark/SLE_12_SP2_Backports/benchmark.repo
     zypper --no-gpg-checks --non-interactive --gpg-auto-import-keys refresh
     zypper --no-gpg-checks --non-interactive --gpg-auto-import-keys remove gettext-runtime-mini-0.19.2-1.103.x86_64
@@ -62,7 +63,7 @@ then
 elif [[ $DISTRO =~ "clear-linux-os" ]];
 then
     echo "Detected Clear Linux OS. Installing required packages"
-    swupd bundle-add performance-tools os-core-dev
+    swupd bundle-add dev-utils-dev sysadmin-basic performance-tools os-testsuite-phoronix network-basic openssh-server dev-utils os-core os-core-dev
 else
         echo "Unknown Distro"
         exit 1

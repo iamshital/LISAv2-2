@@ -6,9 +6,9 @@
 #
 # Description:
 #
-# This script contains all distro-specific functions, as well as
+# This script contains all distro-specific functions, as well as 
 # other common functions used in the LISAv2 test scripts.
-# Private variables used in scripts should use the __VAR_NAME notation.
+# Private variables used in scripts should use the __VAR_NAME notation. 
 # Using the bash built-in `declare' statement also restricts the variable's scope.
 # Same for "private" functions.
 #
@@ -27,7 +27,7 @@ IFS=$' \t\n'
 # All vars are first defined here
 
 # Directory containing all files pushed by LIS framework
-declare LIS_HOME=$(pwd)
+declare LIS_HOME="$HOME"
 
 # LIS state file used by powershell to get the test's state
 declare __LIS_STATE_FILE="$LIS_HOME/state.txt"
@@ -62,6 +62,9 @@ declare -a LEGACY_NET_INTERFACES
 
 # Location that package blobs are stored
 declare PACKAGE_BLOB_LOCATION="https://eosgpackages.blob.core.windows.net/testpackages/tools"
+
+# Link of sshpass RPM for SLES 12
+declare SLES_12_SSHPASS_LINK="https://download.opensuse.org/repositories/network/SLE_12_SP3/x86_64/sshpass-1.06-7.1.x86_64.rpm"
 
 ######################################## Functions ########################################
 
@@ -124,6 +127,8 @@ UtilsInit()
 		UpdateSummary "Error: constants file $__LIS_CONSTANTS_FILE missing or not a regular file. Cannot source it!"
 		return 3
 	fi
+
+	[ -n "$TC_COVERED" ] && UpdateSummary "Test covers $TC_COVERED" || UpdateSummary "Starting unknown test due to missing TC_COVERED variable"
 
 	GetDistro && LogMsg "Testscript running on $DISTRO" || LogMsg "Warning: test running on unknown distro!"
 
@@ -222,9 +227,8 @@ UpdateSummary()
 }
 
 
-# Function to get current distro and distro family
+# Function to get current distro
 # Sets the $DISTRO variable to one of the following: suse, centos_{5, 6, 7}, redhat_{5, 6, 7}, fedora, ubuntu
-# Sets the $OS_FAMILY variable to one of the following: Rhel, Debian, Suse
 # The naming scheme will be distroname_version
 # Takes no arguments
 
@@ -233,8 +237,21 @@ GetDistro()
 	# Make sure we don't inherit anything
 	declare __DISTRO
 	#Get distro (snipper take from alsa-info.sh)
-	__DISTRO=$(grep -ihs "Ubuntu\|SUSE\|Fedora\|Debian\|CentOS\|Red Hat Enterprise Linux\|clear-linux-os\|CoreOS" /{etc,usr/lib}/{issue,*release,*version})
+	__DISTRO=$(grep -ihs "Ubuntu\|SUSE\|Fedora\|Debian\|CentOS\|Red Hat Enterprise Linux" /etc/{issue,*release,*version})
 	case $__DISTRO in
+		*Ubuntu*12*)
+			DISTRO=ubuntu_12
+			;;
+		*Ubuntu*13*)
+			DISTRO=ubuntu_13
+			;;
+		*Ubuntu*14*)
+			DISTRO=ubuntu_14
+			;;
+		# ubuntu 14 in current beta state does not use the number 14 in its description
+		*Ubuntu*Trusty*)
+			DISTRO=ubuntu_14
+			;;
 		*Ubuntu*)
 			DISTRO=ubuntu_x
 			;;
@@ -262,10 +279,10 @@ GetDistro()
 		*CentOS*release*5.*Final)
 			DISTRO=centos_5
 			;;
-		*CentOS*release*6\.*Final*)
+		*CentOS*release*6.*)
 			DISTRO=centos_6
 			;;
-		*CentOS*release*7\.*\.*)
+		*CentOS*Linux*7.*)
 			DISTRO=centos_7
 			;;
 		*CentOS*)
@@ -286,10 +303,10 @@ GetDistro()
 		*Red*5.*)
 			DISTRO=redhat_5
 			;;
-		*Red*6\.*)
+		*Red*6.*)
 			DISTRO=redhat_6
 			;;
-		*Red*7\.*)
+		*Red*7.*)
 			DISTRO=redhat_7
 			;;
 		*Red*8.*)
@@ -298,33 +315,12 @@ GetDistro()
 		*Red*)
 			DISTRO=redhat_x
 			;;
-		*ID=clear-linux-os*)
-			DISTRO=clear-linux-os
-			;;
-		*ID=*CoreOS*)
-			DISTRO=coreos
-			;;
 		*)
 			DISTRO=unknown
 			return 1
 			;;
 	esac
-	case $DISTRO in
-		centos* | redhat* | fedora*)
-			OS_FAMILY="Rhel"
-		;;
-		ubuntu* | debian*)
-			OS_FAMILY="Debian"
-		;;
-		suse*)
-			OS_FAMILY="Sles"
-		;;
-		*)
-			OS_FAMILY="unknown"
-			return 1
-		;;
-	esac
-	echo "OS family: $OS_FAMILY"
+
 	return 0
 }
 
@@ -341,8 +337,8 @@ CheckVMFeatureSupportStatus()
     fi
     # for example 3.10.0-514.el7.x86_64
     # get kernel version array is (3 10 0 514)
-    local kernel_array=($(uname -r | awk -F '[.-]' '{print $1,$2,$3,$4}'))
-    local specifiedKernel_array=($(echo $specifiedKernel | awk -F '[.-]' '{print $1,$2,$3,$4}'))
+    local kernel_array=(`uname -r | awk -F '[.-]' '{print $1,$2,$3,$4}'`)
+    local specifiedKernel_array=(`echo $specifiedKernel | awk -F '[.-]' '{print $1,$2,$3,$4}'`)
     local index=${!kernel_array[@]}
     local n=0
     for n in $index
@@ -360,12 +356,12 @@ CheckVMFeatureSupportStatus()
 }
 
 # Function to get all synthetic network interfaces
-# Sets the $SYNTH_NET_INTERFACES array elements to an interface name suitable for network tools use
+# Sets the $SYNTH_NET_INTERFACES array elements to an interface name suitable for ifconfig etc.
 # Takes no arguments
 GetSynthNetInterfaces()
 {
-    # Check for distribuion version
-    case $DISTRO in
+	#Check for distribuion version
+	case $DISTRO in
         redhat_5)
             check="net:*"
             ;;
@@ -377,12 +373,12 @@ GetSynthNetInterfaces()
     extraction() {
         case $DISTRO in
         redhat_5)
-             SYNTH_NET_INTERFACES[$1]=$(echo "${__SYNTH_NET_ADAPTERS_PATHS[$1]}" | awk -F: '{print $2}')
+             SYNTH_NET_INTERFACES[$1]=`echo "${__SYNTH_NET_ADAPTERS_PATHS[$1]}" | awk -F: '{print $2}'`
             ;;
         *)
              SYNTH_NET_INTERFACES[$1]=$(ls "${__SYNTH_NET_ADAPTERS_PATHS[$1]}" | head -n 1)
             ;;
-        esac
+    	esac
     }
 
 
@@ -425,10 +421,11 @@ GetSynthNetInterfaces()
 }
 
 # Function to get all legacy network interfaces
-# Sets the $LEGACY_NET_INTERFACES array elements to an interface name suitable for network tools use
+# Sets the $LEGACY_NET_INTERFACES array elements to an interface name suitable for ifconfig/ip commands.
 # Takes no arguments
 GetLegacyNetInterfaces()
 {
+
 	# declare array
 	declare -a __LEGACY_NET_ADAPTERS_PATHS
 	# Add legacy netadapter paths into __LEGACY_NET_ADAPTERS_PATHS array
@@ -615,7 +612,7 @@ SetIPstatic()
 	__ip="$1"
 
 	echo "$__netmask" | grep '.' >/dev/null 2>&1
-	if [ 0 -eq $? ]; then
+	if [  0 -eq $? ]; then
 		__netmask=$(NetmaskToCidr "$__netmask")
 		if [ 0 -ne $? ]; then
 			LogMsg "SetIPstatic: $__netmask is not a valid netmask"
@@ -668,6 +665,7 @@ NetmaskToCidr()
 	fi
 
 	declare -i netbits=0
+	oldifs="$IFS"
 	IFS=.
 
 	for dec in $1; do
@@ -799,10 +797,14 @@ CreateVlanConfig()
 	CheckIP "$2"
 	if [[ $? -eq 0 ]]; then
 	    netmaskConf="NETMASK"
+	    ifaceConf="inet"
+	    ipAddress="IPADDR"
 	else
 		CheckIPV6 "$2"
 		if [[ $? -eq 0 ]]; then
 	    	netmaskConf="PREFIX"
+	    	ifaceConf="inet6"
+	    	ipAddress="IPV6ADDR"
 	    else
 	    	LogMsg "CreateVlanConfig: $2 is not a valid IP Address"
 			return 2
@@ -817,8 +819,9 @@ CreateVlanConfig()
 	fi
 
 	# check that vlan driver is loaded
-	if ! lsmod | grep 8021q
-	then
+	lsmod | grep 8021q
+
+	if [ 0 -ne $? ]; then
 		modprobe 8021q
 	fi
 
@@ -834,37 +837,71 @@ CreateVlanConfig()
 	__netmask="$3"
 	__vlanID="$4"
 
-	# consider a better cleanup of environment if an existing interfaces setup exists
-	__file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface"
-	if [ -e "$__file_path" ]; then
-		LogMsg "CreateVlanConfig: warning, $__file_path already exists."
-		if [ -d "$__file_path" ]; then
-			rm -rf "$__file_path"
-		else
-			rm -f "$__file_path"
-		fi
-	fi
-
-	__vlan_file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface.$__vlanID"
-	if [ -e "$__vlan_file_path" ]; then
-		LogMsg "CreateVlanConfig: warning, $__vlan_file_path already exists."
-		if [ -d "$__vlan_file_path" ]; then
-			rm -rf "$__vlan_file_path"
-		else
-			rm -f "$__vlan_file_path"
-		fi
-	fi
-
 	GetDistro
 	case $DISTRO in
-		redhat*|centos*|fedora*|debian*|ubuntu*)
-			ip link add link "$__interface" name "$__interface.$__vlanID" type vlan id "$__vlanID"
-			ip addr add "$__ip/$__netmask" dev "$__interface.$__vlanID"
-			ip link set dev "$__interface" up
-			ip link set dev "$__interface.$__vlanID" up
+		redhat*|centos*|fedora*)
+			__file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface"
+			if [ -e "$__file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__file_path already exists."
+				if [ -d "$__file_path" ]; then
+					rm -rf "$__file_path"
+				else
+					rm -f "$__file_path"
+				fi
+			fi
+
+			__vlan_file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface.$__vlanID"
+			if [ -e "$__vlan_file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__vlan_file_path already exists."
+				if [ -d "$__vlan_file_path" ]; then
+					rm -rf "$__vlan_file_path"
+				else
+					rm -f "$__vlan_file_path"
+				fi
+			fi
+
+			cat <<-EOF > "$__file_path"
+				DEVICE=$__interface
+				TYPE=Ethernet
+				BOOTPROTO=none
+				ONBOOT=yes
+			EOF
+
+			cat <<-EOF > "$__vlan_file_path"
+				DEVICE=$__interface.$__vlanID
+				BOOTPROTO=none
+				$ipAddress=$__ip
+				$netmaskConf=$__netmask
+				ONBOOT=yes
+				VLAN=yes
+			EOF
+
+			ifdown "$__interface"
+			ifup "$__interface"
+			ifup "$__interface.$__vlanID"
 
 			;;
 		suse_12*)
+			__file_path="/etc/sysconfig/network/ifcfg-$__interface"
+			if [ -e "$__file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__file_path already exists."
+				if [ -d "$__file_path" ]; then
+					rm -rf "$__file_path"
+				else
+					rm -f "$__file_path"
+				fi
+			fi
+
+			__vlan_file_path="/etc/sysconfig/network/ifcfg-$__interface.$__vlanID"
+			if [ -e "$__vlan_file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__vlan_file_path already exists."
+				if [ -d "$__vlan_file_path" ]; then
+					rm -rf "$__vlan_file_path"
+				else
+					rm -f "$__vlan_file_path"
+				fi
+			fi
+
 			cat <<-EOF > "$__file_path"
 				TYPE=Ethernet
 				BOOTPROTO=none
@@ -890,14 +927,34 @@ CreateVlanConfig()
 				EOF
 			fi
 
+
 			# bring real interface down and up again
 			wicked ifdown "$__interface"
 			wicked ifup "$__interface"
 			# bring also vlan interface up
 			wicked ifup "$__interface.$__vlanID"
-
 			;;
 		suse*)
+			__file_path="/etc/sysconfig/network/ifcfg-$__interface"
+			if [ -e "$__file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__file_path already exists."
+				if [ -d "$__file_path" ]; then
+					rm -rf "$__file_path"
+				else
+					rm -f "$__file_path"
+				fi
+			fi
+
+			__vlan_file_path="/etc/sysconfig/network/ifcfg-$__interface.$__vlanID"
+			if [ -e "$__vlan_file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__vlan_file_path already exists."
+				if [ -d "$__vlan_file_path" ]; then
+					rm -rf "$__vlan_file_path"
+				else
+					rm -f "$__vlan_file_path"
+				fi
+			fi
+
 			cat <<-EOF > "$__file_path"
 				BOOTPROTO=static
 				IPADDR=0.0.0.0
@@ -923,10 +980,96 @@ CreateVlanConfig()
 				EOF
 			fi
 
-			ip link set "$__interface" down
-			ip link set "$__interface" up
-			ip link set "$__interface.$__vlanID" up
+			ifdown "$__interface"
+			ifup "$__interface"
+			ifup "$__interface.$__vlanID"
+			;;
+		debian*|ubuntu*)
+			#Check for vlan package and install it in case of absence
+			dpkg -s vlan
+			if [ 0 -ne $? ]; then
+				apt -y install vlan
+				if [ 0 -ne $? ]; then
+					LogMsg "Failed to install VLAN package. Please try manually."
+					return 90
+				fi
+			fi
+			__file_path="/etc/network/interfaces"
+			if [ ! -e "$__file_path" ]; then
+				LogMsg "CreateVlanConfig: warning, $__file_path does not exist. Creating it..."
+				if [ -d "$(dirname $__file_path)" ]; then
+					touch "$__file_path"
+				else
+					rm -f "$(dirname $__file_path)"
+					LogMsg "CreateVlanConfig: Warning $(dirname $__file_path) is not a directory"
+					mkdir -p "$(dirname $__file_path)"
+					touch "$__file_path"
+				fi
+			fi
 
+			declare __first_iface
+			declare __last_line
+			declare __second_iface
+			# delete any previously existing lines containing the desired vlan interface
+			# get first line number containing our interested interface
+			__first_iface=$(awk "/iface $__interface/ { print NR; exit }" "$__file_path")
+			# if there was any such line found, delete it and any related config lines
+			if [ -n "$__first_iface" ]; then
+				# get the last line of the file
+				__last_line=$(wc -l $__file_path | cut -d ' ' -f 1)
+				# sanity check
+				if [ "$__first_iface" -gt "$__last_line" ]; then
+					LogMsg "CreateVlanConfig: error while parsing $__file_path . First iface line is gt last line in file"
+					return 100
+				fi
+
+				# get the last x lines after __first_iface
+				__second_iface=$((__last_line-__first_iface))
+
+				# if the first_iface was also the last line in the file
+				if [ "$__second_iface" -eq 0 ]; then
+					__second_iface=$__last_line
+				else
+					# get the line number of the seconf iface line
+					__second_iface=$(tail -n $__second_iface $__file_path | awk "/iface/ { print NR; exit }")
+
+					if [ -z $__second_iface ]; then
+						__second_iface="$__last_line"
+					else
+						__second_iface=$((__first_iface+__second_iface-1))
+					fi
+
+
+					if [ "$__second_iface" -gt "$__last_line" ]; then
+						LogMsg "CreateVlanConfig: error while parsing $__file_path . Second iface line is gt last line in file"
+						return 100
+					fi
+
+					if [ "$__second_iface" -le "$__first_iface" ]; then
+						LogMsg "CreateVlanConfig: error while parsing $__file_path . Second iface line is gt last line in file"
+						return 100
+					fi
+				fi
+				# now delete all lines between the first iface and the second iface
+				sed -i "$__first_iface,${__second_iface}d" "$__file_path"
+			fi
+
+			sed -i "/auto $__interface/d" "$__file_path"
+			# now append our config to the end of the file
+			cat << EOF >> "$__file_path"
+auto $__interface
+iface $__interface inet static
+	address 0.0.0.0
+
+auto $__interface.$__vlanID
+iface $__interface.$__vlanID $ifaceConf static
+	address $__ip
+	netmask $__netmask
+EOF
+
+			ifdown "$__interface"
+			ifup $__interface
+			ifup $__interface.$__vlanID
 			;;
 		*)
 			LogMsg "Platform not supported yet!"
@@ -937,7 +1080,8 @@ CreateVlanConfig()
 	sleep 5
 
 	# verify change took place
-	grep "$__vlanID" /proc/net/vlan/config
+	cat /proc/net/vlan/config | grep " $__vlanID "
+
 	if [ 0 -ne $? ]; then
 		LogMsg "/proc/net/vlan/config has no vlanID of $__vlanID"
 		return 5
@@ -1022,9 +1166,9 @@ RemoveVlanConfig()
 				fi
 			fi
 
-			ip link set "$__interface.$__vlanID" down
-			ip link set "$__interface" down
-			ip link set "$__interface" up
+			ifdown $__interface.$__vlanID
+			ifdown $__interface
+			ifup $__interface
 
 			# make sure the interface is down
 			ip link set "$__interface.$__vlanID" down
@@ -1168,6 +1312,7 @@ CreateIfupConfigFile()
 
 				wicked ifdown "$__interface_name"
 				wicked ifup "$__interface_name"
+
 				;;
 			suse*)
 				__file_path="/etc/sysconfig/network/ifcfg-$__interface_name"
@@ -1185,10 +1330,11 @@ CreateIfupConfigFile()
 					BOOTPROTO=dhcp
 				EOF
 
-				ip link set "$__interface_name" down
-				ip link set "$__interface_name" up
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
+
 				;;
-			redhat_6|centos_6|redhat_7|redhat_8|centos_7|centos_8|fedora*)
+			redhat_7|redhat_8|centos_7|centos_8|fedora*)
 				__file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface_name"
 				if [ ! -d "$(dirname $__file_path)" ]; then
 					LogMsg "CreateIfupConfigFile: $(dirname $__file_path) does not exist! Something is wrong with the network config!"
@@ -1204,8 +1350,29 @@ CreateIfupConfigFile()
 					BOOTPROTO=dhcp
 				EOF
 
-				ip link set "$__interface_name" up
-				service network restart || service networking restart
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
+
+				;;
+			redhat_6|centos_6)
+				__file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface_name"
+				if [ ! -d "$(dirname $__file_path)" ]; then
+					LogMsg "CreateIfupConfigFile: $(dirname $__file_path) does not exist! Something is wrong with the network config!"
+					return 3
+				fi
+
+				if [ -e "$__file_path" ]; then
+					LogMsg "CreateIfupConfigFile: Warning will overwrite $__file_path ."
+				fi
+
+				cat <<-EOF > "$__file_path"
+					DEVICE="$__interface_name"
+					BOOTPROTO=dhcp
+					IPV6INIT=yes
+				EOF
+
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
 
 				;;
 			redhat_5|centos_5)
@@ -1229,7 +1396,8 @@ CreateIfupConfigFile()
 					NETWORKING_IPV6=yes
 				EOF
 
-				ip link set "$__interface_name" up
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
 
 				;;
 			debian*|ubuntu*)
@@ -1255,11 +1423,10 @@ CreateIfupConfigFile()
 					iface $__interface_name inet dhcp
 				EOF
 
-				ip link set "$__interface_name" up
-				service networking restart || service network restart
-				if $(ifup --help > /dev/null 2>&1) ; then
-					ifup "$__interface_name"
-				fi
+				service network-manager restart
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
+
 				;;
 			*)
 				LogMsg "CreateIfupConfigFile: Platform not supported yet!"
@@ -1341,8 +1508,8 @@ CreateIfupConfigFile()
 					NETMASK="$__netmask"
 				EOF
 
-				ip link set "$__interface_name" down
-				ip link set "$__interface_name" up
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
 				;;
 			redhat*|centos*|fedora*)
 				__file_path="/etc/sysconfig/network-scripts/ifcfg-$__interface_name"
@@ -1374,8 +1541,8 @@ CreateIfupConfigFile()
 					EOF
 				fi
 
-				ip link set "$__interface_name" up
-				service network restart || service networking restart
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
 				;;
 
 			debian*|ubuntu*)
@@ -1417,14 +1584,13 @@ CreateIfupConfigFile()
 					EOF
 				fi
 
-				ip link set "$__interface_name" up
-				service networking restart || service network restart
-				if $(ifup --help > /dev/null 2>&1) ; then
-					ifup "$__interface_name"
-				fi
+				service network-manager restart
+				ifdown "$__interface_name"
+				ifup "$__interface_name"
+
 				;;
 			*)
-				LogMsg "CreateIfupConfigFile: Platform not supported!"
+				LogMsg "CreateIfupConfigFile: Platform not supported yet!"
 				return 3
 				;;
 		esac
@@ -1520,7 +1686,7 @@ ControlNetworkManager()
 			fi
 			;;
 		*)
-			LogMsg "Platform not supported!"
+			LogMsg "Platform not supported yet!"
 			return 3
 			;;
 	esac
@@ -1723,6 +1889,7 @@ TearDownBridge()
 # $2 number of bytes to compare
 # return == 0 if total free space is greater than $2
 # return 1 otherwise
+
 IsFreeSpace()
 {
 	if [ 2 -ne $# ]; then
@@ -1746,10 +1913,10 @@ declare os_VENDOR os_RELEASE os_UPDATE os_PACKAGE os_CODENAME
 # GetOSVersion
 function GetOSVersion {
     # Figure out which vendor we are
-    if [[ -x "$(which sw_vers 2>/dev/null)" ]]; then
+    if [[ -x "`which sw_vers 2>/dev/null`" ]]; then
         # OS/X
-        os_VENDOR=$(sw_vers -productName)
-        os_RELEASE=$(sw_vers -productVersion)
+        os_VENDOR=`sw_vers -productName`
+        os_RELEASE=`sw_vers -productVersion`
         os_UPDATE=${os_RELEASE##*.}
         os_RELEASE=${os_RELEASE%.*}
         os_PACKAGE=""
@@ -1777,8 +1944,8 @@ function GetOSVersion {
         os_CODENAME=""
         for r in "Red Hat" CentOS Fedora XenServer; do
             os_VENDOR=$r
-            if [[ -n $(grep "${r}" "/etc/redhat-release") ]]; then
-                ver=$(sed -e 's/^.* \([0-9].*\) (\(.*\)).*$/\1\|\2/' /etc/redhat-release)
+            if [[ -n "`grep \"$r\" /etc/redhat-release`" ]]; then
+                ver=`sed -e 's/^.* \([0-9].*\) (\(.*\)).*$/\1\|\2/' /etc/redhat-release`
                 os_CODENAME=${ver#*|}
                 os_RELEASE=${ver%|*}
                 os_UPDATE=${os_RELEASE##*.}
@@ -1809,8 +1976,8 @@ function GetOSVersion {
         os_CODENAME=$(lsb_release -c -s)
 
     elif [[ -r /etc/SuSE-brand || -r /etc/SUSE-brand ]]; then
-        os_VENDOR=$(head -1 /etc/S*SE-brand)
-        os_VERSION=$(cat /etc/S*SE-brand | awk '/VERSION/ {print $NF}')
+        os_VENDOR=`head -1 /etc/S*SE-brand`
+        os_VERSION=`cat /etc/S*SE-brand | awk '/VERSION/ {print $NF}'`
         os_RELEASE=$os_VERSION
         os_PACKAGE="rpm"
 
@@ -1822,10 +1989,10 @@ function GetOSVersion {
                 os_VENDOR=$r
             fi
 
-            if [[ -n "$(grep \"$r\" /etc/SuSE-release)" ]]; then
-                os_CODENAME=$(grep "CODENAME = " /etc/SuSE-release | sed 's:.* = ::g')
-                os_RELEASE=$(grep "VERSION = " /etc/SuSE-release | sed 's:.* = ::g')
-                os_UPDATE=$(grep "PATCHLEVEL = " /etc/SuSE-release | sed 's:.* = ::g')
+            if [[ -n "`grep \"$r\" /etc/SuSE-release`" ]]; then
+                os_CODENAME=`grep "CODENAME = " /etc/SuSE-release | sed 's:.* = ::g'`
+                os_RELEASE=`grep "VERSION = " /etc/SuSE-release | sed 's:.* = ::g'`
+                os_UPDATE=`grep "PATCHLEVEL = " /etc/SuSE-release | sed 's:.* = ::g'`
                 break
             fi
             os_VENDOR=""
@@ -1836,11 +2003,6 @@ function GetOSVersion {
         os_VENDOR="Debian"
         os_PACKAGE="deb"
         os_CODENAME=$(awk '/VERSION=/' /etc/os-release | sed 's/VERSION=//' | sed -r 's/\"|\(|\)//g' | awk '{print $2}')
-        os_RELEASE=$(awk '/VERSION_ID=/' /etc/os-release | sed 's/VERSION_ID=//' | sed 's/\"//g')
-    elif [[ -f /etc/os-release ]] && [[ $(cat /etc/os-release) =~ "SUSE Linux Enterprise Server 15" ]]; then
-        os_VENDOR="SLES"
-        os_PACKAGE="rpm"
-        os_CODENAME=""
         os_RELEASE=$(awk '/VERSION_ID=/' /etc/os-release | sed 's/VERSION_ID=//' | sed 's/\"//g')
     fi
     export os_VENDOR os_RELEASE os_UPDATE os_PACKAGE os_CODENAME
@@ -1905,7 +2067,6 @@ GetGuestGeneration()
     else
         os_GENERATION=1
     fi
-	echo "Generation: $os_GENERATION"
 }
 
 #######################################################################
@@ -1962,8 +2123,7 @@ VerifyIsEthtool()
                 fi
                 ;;
             ubuntu*|debian*)
-                apt update -y
-		apt install ethtool -y
+                apt install ethtool -y
                 if [ $? -ne 0 ]; then
                     msg="ERROR: Failed to install Ethtool"
                     LogMsg "$msg"
@@ -2088,16 +2248,17 @@ function check_exit_status ()
 	message=$1
 
 	cmd="echo"
+	if [ ! -z $2 ]; then
+		cmd=$2
+	fi
+
 	if [ $exit_status -ne 0 ]; then
 		$cmd "$message: Failed (exit code: $exit_status)"
-		UpdateSummary "$message Failed·(exit·code:·$exit_status)"
 		if [ "$2" == "exit" ]; then
-			SetTestStateAborted
 			exit $exit_status
 		fi
 	else
 		$cmd "$message: Success"
-		UpdateSummary "$message: Success"
 	fi
 }
 
@@ -2105,28 +2266,21 @@ function check_exit_status ()
 function detect_linux_distribution_version() {
 	local distro_version="Unknown"
 	if [ -f /etc/centos-release ]; then
-		distro_version=$(cat /etc/centos-release | sed s/.*release\ // | sed s/\ .*//)
+		distro_version=`cat /etc/centos-release | sed s/.*release\ // | sed s/\ .*//`
 	elif [ -f /etc/oracle-release ]; then
-		distro_version=$(cat /etc/oracle-release | sed s/.*release\ // | sed s/\ .*//)
+		distro_version=`cat /etc/oracle-release | sed s/.*release\ // | sed s/\ .*//`
 	elif [ -f /etc/redhat-release ]; then
-		distro_version=$(cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//)
+		distro_version=`cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//`
 	elif [ -f /etc/os-release ]; then
-		distro_version=$(cat /etc/os-release|sed 's/"//g'|grep "VERSION_ID="| sed 's/VERSION_ID=//'| sed 's/\r//')
-	elif [ -f /usr/share/clear/version ]; then
-		distro_version=$(cat /usr/share/clear/version)
+		distro_version=`cat /etc/os-release|sed 's/"//g'|grep "VERSION_ID="| sed 's/VERSION_ID=//'| sed 's/\r//'`
 	fi
 	echo $distro_version
 }
 
 # Detect the Linux distribution name, it gets the name in lowercase
 function detect_linux_distribution() {
-	if ls /etc/*release* 1> /dev/null 2>&1; then
-		local linux_distribution=$(cat /etc/*release*|sed 's/"//g'|grep "^ID="| sed 's/ID=//')
-		local temp_text=$(cat /etc/*release*)
-	elif [ -f "/usr/lib/os-release" ]; then
-		local linux_distribution=$(cat /usr/lib/os-release|sed 's/"//g'|grep "^ID="| sed 's/ID=//')
-		local temp_text=$(cat /usr/lib/os-release)
-	fi
+	local linux_distribution=`cat /etc/*release*|sed 's/"//g'|grep "^ID="| sed 's/ID=//'`
+	local temp_text=`cat /etc/*release*`
 	if [ "$linux_distribution" == "" ]; then
 		if echo "$temp_text" | grep -qi "ol"; then
 			linux_distribution='oracle'
@@ -2165,9 +2319,6 @@ function update_repos() {
 		suse|opensuse|sles)
 			zypper refresh
 			;;
-		clear-linux-os)
-			swupd update
-			;;
 		*)
 			echo "Unknown distribution"
 			return 1
@@ -2194,18 +2345,8 @@ function install_deb () {
 function apt_get_install ()
 {
 	package_name=$1
-	dpkg_configure
-	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --force-yes $package_name
+	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y  --force-yes $package_name
 	check_exit_status "apt_get_install $package_name"
-}
-
-# Apt-get remove packages, parameter: package name
-function apt_get_remove ()
-{
-	package_name=$1
-	dpkg_configure
-	sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y --force-yes $package_name
-	check_exit_status "apt_get_remove $package_name"
 }
 
 # Yum install packages, parameter: package name
@@ -2216,14 +2357,6 @@ function yum_install ()
 	check_exit_status "yum_install $package_name"
 }
 
-# Yum remove packages, parameter: package name
-function yum_remove ()
-{
-	package_name=$1
-	sudo yum -y remove $package_name
-	check_exit_status "yum_remove $package_name"
-}
-
 # Zypper install packages, parameter: package name
 function zypper_install ()
 {
@@ -2232,35 +2365,11 @@ function zypper_install ()
 	check_exit_status "zypper_install $package_name"
 }
 
-# Zypper remove packages, parameter: package name
-function zypper_remove ()
-{
-	package_name=$1
-	sudo zypper --non-interactive rm $package_name
-	check_exit_status "zypper_remove $package_name"
-}
-
-# swupd bundle install packages, parameter: package name
-function swupd_bundle_install ()
-{
-	package_name=$1
-	sudo swupd bundle-add $package_name
-	check_exit_status "swupd_bundle_install $package_name"
-}
-
-# swupd bundle remove packages, parameter: package name
-function swupd_bundle_remove ()
-{
-	package_name=$1
-	sudo swupd bundle-remove $package_name
-	check_exit_status "swupd_bundle_remove $package_name"
-}
-
 # Install packages, parameter: package name
 function install_package ()
 {
-	local package_list=("$@")
-	for package_name in "${package_list[@]}"; do
+	local package_name=$@
+	for i in "${package_name[@]}"; do
 		case "$DISTRO_NAME" in
 			oracle|rhel|centos)
 				yum_install "$package_name"
@@ -2274,37 +2383,6 @@ function install_package ()
 				zypper_install "$package_name"
 				;;
 
-			clear-linux-os)
-				swupd_bundle_install "$package_name"
-				;;
-			*)
-				echo "Unknown distribution"
-				return 1
-		esac
-	done
-}
-
-# Remove packages, parameter: package name
-function remove_package ()
-{
-	local package_list=("$@")
-	for package_name in "${package_list[@]}"; do
-		case "$DISTRO_NAME" in
-			oracle|rhel|centos)
-				yum_remove "$package_name"
-				;;
-
-			ubuntu|debian)
-				apt_get_remove "$package_name"
-				;;
-
-			suse|opensuse|sles)
-				zypper_remove "$package_name"
-				;;
-
-			clear-linux-os)
-				swupd_bundle_remove "$package_name"
-				;;
 			*)
 				echo "Unknown distribution"
 				return 1
@@ -2333,39 +2411,16 @@ function install_epel () {
 	check_exit_status "install_epel"
 }
 
-function enable_nfs_rhel() {
-    if [[ $DISTRO_NAME == "rhel" ]];then
-        firewall-cmd --permanent --add-port=111/tcp
-        firewall-cmd --permanent --add-port=54302/tcp
-        firewall-cmd --permanent --add-port=20048/tcp
-        firewall-cmd --permanent --add-port=2049/tcp
-        firewall-cmd --permanent --add-port=46666/tcp
-        firewall-cmd --permanent --add-port=42955/tcp
-        firewall-cmd --permanent --add-port=875/tcp
-
-        firewall-cmd --reload
-    fi
-}
-
 # Install sshpass
 function install_sshpass () {
 	which sshpass
 	if [ $? -ne 0 ]; then
 		echo "sshpass not installed\n Installing now..."
-		install_package sshpass
-		which sshpass
-		if [ $? -ne 0 ]; then
-			echo "sshpass not installed\n Build it from source code now..."
-			package_name="sshpass-1.06"
-			source_url="https://sourceforge.net/projects/sshpass/files/sshpass/1.06/$package_name.tar.gz"
-			wget $source_url
-			tar -xvf "$package_name.tar.gz"
-			cd $package_name
-			install_package "gcc make"
-			./configure --prefix=/usr/ && make && make install
-			cd ..
+		if [ $DISTRO_NAME == "sles" ] && [[ $DISTRO_VERSION =~ 12 ]]; then
+			rpm -ivh $SLES_12_SSHPASS_LINK
+		else
+			install_package "sshpass"
 		fi
-		which sshpass
 		check_exit_status "install_sshpass"
 	fi
 }
@@ -2385,7 +2440,6 @@ function add_sles_benchmark_repo () {
 				return 1
 		esac
 		zypper addrepo $repo_url
-		zypper --no-gpg-checks refresh
 	else
 		echo "Unsupported distribution for add_sles_benchmark_repo"
 		return 1
@@ -2410,7 +2464,6 @@ function add_sles_network_utilities_repo () {
 				return 1
 		esac
 		zypper addrepo $repo_url
-		zypper --no-gpg-checks refresh
 	else
 		echo "Unsupported distribution for add_sles_network_utilities_repo"
 		return 1
@@ -2432,7 +2485,7 @@ function install_fio () {
 	echo "Detected $DISTRO_NAME $DISTRO_VERSION; installing required packages of fio"
 	update_repos
 	case "$DISTRO_NAME" in
-		oracle|rhel|centos)
+		rhel|centos)
 			install_epel
 			yum -y --nogpgcheck install wget sysstat mdadm blktrace libaio fio
 			check_exit_status "install_fio"
@@ -2440,7 +2493,6 @@ function install_fio () {
 			;;
 
 		ubuntu|debian)
-			export DEBIAN_FRONTEND=noninteractive
 			dpkg_configure
 			apt-get install -y pciutils gawk mdadm wget sysstat blktrace bc fio
 			check_exit_status "install_fio"
@@ -2476,24 +2528,14 @@ function install_fio () {
 			;;
 
 		clear-linux-os)
-			swupd_bundle_install "performance-tools os-core-dev fio"
-			iptables -F
-			;;
-
-		coreos)
-			docker pull lisms/fio
-			docker pull lisms/toolbox
+			swupd bundle-add dev-utils-dev sysadmin-basic performance-tools os-testsuite-phoronix network-basic openssh-server dev-utils os-core os-core-dev
 			;;
 
 		*)
 			echo "Unsupported distribution for install_fio"
 			return 1
 	esac
-	if [[ $(detect_linux_distribution) == coreos ]]; then
-		docker images | grep -i lisms/fio
-	else
-		which fio
-	fi
+	which fio
 	if [ $? -ne 0 ]; then
 		return 1
 	fi	
@@ -2505,9 +2547,9 @@ function install_iperf3 () {
 	echo "Detected $DISTRO_NAME $DISTRO_VERSION; installing required packages of iperf3"
 	update_repos
 	case "$DISTRO_NAME" in
-		oracle|rhel|centos)
+		rhel|centos)
 			install_epel
-			yum -y --nogpgcheck install iperf3 sysstat bc psmisc wget
+			yum -y --nogpgcheck install iperf3 sysstat bc psmisc
 			iptables -F
 			;;
 
@@ -2527,8 +2569,7 @@ function install_iperf3 () {
 				echo "iface $nic_name inet6 auto" >> /etc/network/interfaces.d/50-cloud-init.cfg
 				echo "up sleep 5" >> /etc/network/interfaces.d/50-cloud-init.cfg
 				echo "up dhclient -1 -6 -cf /etc/dhcp/dhclient6.conf -lf /var/lib/dhcp/dhclient6.$nic_name.leases -v $nic_name || true" >> /etc/network/interfaces.d/50-cloud-init.cfg
-				ip link set $nic_name down
-				ip link set $nic_name up
+				ifdown $nic_name && ifup $nic_name
 			fi
 			;;
 
@@ -2550,7 +2591,7 @@ function install_iperf3 () {
 				which iperf3
 				if [ $? -ne 0 ]; then
 					LogMsg "Error: Unable to install iperf3 from source/rpm"
-					SetTestStateAborted
+					UpdateTestState "TestAborted"
 					return 1
 				fi
 			else
@@ -2561,23 +2602,15 @@ function install_iperf3 () {
 
 
 		clear-linux-os)
-			swupd_bundle_install "performance-tools os-core-dev"
+			swupd bundle-add dev-utils-dev sysadmin-basic performance-tools os-testsuite-phoronix network-basic openssh-server dev-utils os-core os-core-dev
 			iptables -F
-			;;
-
-		coreos)
-			docker pull lisms/iperf3
 			;;
 
 		*)
 			echo "Unsupported distribution for install_iperf3"
 			return 1
 	esac
-	if [[ $(detect_linux_distribution) == coreos ]]; then
-		docker images | grep -i lisms/iperf3
-	else
-		which iperf3
-	fi
+	which iperf3
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
@@ -2596,9 +2629,9 @@ function install_lagscope () {
 	echo "Detected $DISTRO_NAME $DISTRO_VERSION; installing required packages of lagscope"
 	update_repos
 	case "$DISTRO_NAME" in
-		oracle|rhel|centos)
+		rhel|centos)
 			install_epel
-			yum -y --nogpgcheck install libaio sysstat git bc make gcc wget
+			yum -y --nogpgcheck install libaio sysstat git bc make gcc
 			build_lagscope
 			iptables -F
 			;;
@@ -2622,24 +2655,15 @@ function install_lagscope () {
 			;;
 
 		clear-linux-os)
-			swupd_bundle_install "performance-tools os-core-dev"
-			build_lagscope
+			swupd bundle-add dev-utils-dev sysadmin-basic performance-tools os-testsuite-phoronix network-basic openssh-server dev-utils os-core os-core-dev
 			iptables -F
-			;;
-
-		coreos)
-			docker pull lisms/lagscope
 			;;
 
 		*)
 			echo "Unsupported distribution for install_lagscope"
 			return 1
 	esac
-	if [[ $(detect_linux_distribution) == coreos ]]; then
-		docker images | grep -i lisms/lagscope
-	else
-		which lagscope
-	fi
+	which lagscope
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
@@ -2647,19 +2671,9 @@ function install_lagscope () {
 
 # Build and install ntttcp
 function build_ntttcp () {
-	ntttcp_version="v1.3.4"
-	# If the ntttcpVersion is provided in xml then it will go for that version, otherwise default to v1.3.4.
-	if [ "${1}" ]; then
-		ntttcp_version=${1}
-	fi
-	if [ $ntttcp_version == "master" ]; then
-		git clone https://github.com/Microsoft/ntttcp-for-linux.git
-		pushd ntttcp-for-linux/src/ && make && make install
-	else
-		wget https://github.com/Microsoft/ntttcp-for-linux/archive/${ntttcp_version}.tar.gz
-		tar -zxvf ${ntttcp_version}.tar.gz
-		pushd ntttcp-for-linux-${ntttcp_version/v/}/src/ && make && make install
-	fi
+	wget https://github.com/Microsoft/ntttcp-for-linux/archive/v1.3.4.tar.gz
+	tar -zxvf v1.3.4.tar.gz
+	pushd ntttcp-for-linux-1.3.4/src/ && make && make install
 	popd
 }
 
@@ -2668,10 +2682,10 @@ function install_ntttcp () {
 	echo "Detected $DISTRO_NAME $DISTRO_VERSION; installing required packages of ntttcp"
 	update_repos
 	case "$DISTRO_NAME" in
-		oracle|rhel|centos)
+		rhel|centos)
 			install_epel
 			yum -y --nogpgcheck install wget libaio sysstat git bc make gcc dstat psmisc
-			build_ntttcp "${1}"
+			build_ntttcp
 			build_lagscope
 			iptables -F
 			;;
@@ -2679,7 +2693,7 @@ function install_ntttcp () {
 		ubuntu|debian)
 			dpkg_configure
 			apt-get -y install wget libaio1 sysstat git bc make gcc dstat psmisc
-			build_ntttcp "${1}"
+			build_ntttcp
 			build_lagscope
 			;;
 
@@ -2687,7 +2701,7 @@ function install_ntttcp () {
 			if [[ $DISTRO_VERSION =~ 12|15 ]]; then
 				add_sles_network_utilities_repo
 				zypper --no-gpg-checks --non-interactive --gpg-auto-import-keys install wget sysstat git bc make gcc dstat psmisc
-				build_ntttcp "${1}"
+				build_ntttcp
 				build_lagscope
 				iptables -F
 			else
@@ -2697,90 +2711,15 @@ function install_ntttcp () {
 			;;
 
 		clear-linux-os)
-			swupd_bundle_install "performance-tools os-core-dev"
-			build_ntttcp "${1}"
-			build_lagscope
+			swupd bundle-add dev-utils-dev sysadmin-basic performance-tools os-testsuite-phoronix network-basic openssh-server dev-utils os-core os-core-dev
 			iptables -F
-			;;
-
-		coreos)
-			docker pull lisms/ntttcp
-			docker pull lisms/toolbox
-			docker pull lisms/lagscope
 			;;
 
 		*)
 			echo "Unsupported distribution for install_ntttcp"
 			return 1
 	esac
-	if [[ $(detect_linux_distribution) == coreos ]]; then
-		docker images | grep -i lisms/ntttcp
-	else
-		which ntttcp
-	fi
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
-}
-
-function build_netperf () {
-	rm -rf lagscope
-	wget https://github.com/HewlettPackard/netperf/archive/netperf-2.7.0.tar.gz
-	tar -xzf netperf-2.7.0.tar.gz
-	pushd netperf-netperf-2.7.0 && ./configure && make && make install
-	popd
-}
-
-# Install ntttcp and required packages
-function install_netperf () {
-	echo "Detected $DISTRO_NAME $DISTRO_VERSION; installing required packages of netperf"
-	update_repos
-	case "$DISTRO_NAME" in
-		oracle|rhel|centos)
-			install_epel
-			yum -y --nogpgcheck install sysstat make gcc wget
-			build_netperf
-			iptables -F
-			;;
-
-		ubuntu|debian)
-			dpkg_configure
-			apt-get -y install sysstat make gcc
-			build_netperf
-			;;
-
-		sles)
-			if [[ $DISTRO_VERSION =~ 12|15 ]]; then
-				add_sles_network_utilities_repo
-				zypper --no-gpg-checks --non-interactive --gpg-auto-import-keys install sysstat make gcc
-				build_netperf
-				iptables -F
-			else
-				echo "Unsupported SLES version"
-				return 1
-			fi
-			;;
-
-		clear-linux-os)
-			swupd_bundle_install "dev-utils-dev sysadmin-basic performance-tools os-testsuite-phoronix network-basic openssh-server dev-utils os-core os-core-dev"
-			build_netperf
-			iptables -F
-			;;
-
-		coreos)
-			docker pull lisms/netperf
-			docker pull lisms/toolbox
-			;;
-
-		*)
-			echo "Unsupported distribution for build_netperf"
-			return 1
-	esac
-	if [[ $(detect_linux_distribution) == coreos ]]; then
-		docker images | grep -i lisms/netperf
-	else
-		which netperf
-	fi
+	which ntttcp
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
@@ -2822,28 +2761,21 @@ function remove_partitions () {
 
 # Create RAID using unused data disks attached to the VM.
 function create_raid_and_mount() {
+	if [[ $# == 3 ]]; then
+		local deviceName=$1
+		local mountdir=$2
+		local format=$3
+	else
 		local deviceName="/dev/md1"
 		local mountdir=/data-dir
 		local format="ext4"
-		local mount_option=""
-		if [[ ! -z "$1" ]];then
-			deviceName=$1
-		fi
-		if [[ ! -z "$2" ]];then
-			mountdir=$2
-		fi
-		if [[ ! -z "$3" ]];then
-			format=$3
-		fi
-		if [[ ! -z "$4" ]];then
-			mount_option=$4
-		fi
+	fi
 
 	local uuid=""
 	local list=""
 
 	echo "IO test setup started.."
-	list=($(fdisk -l | grep 'Disk.*/dev/sd[a-z]' |awk  '{print $2}' | sed s/://| sort| grep -v "/dev/sd[ab]$" ))
+	list=(`fdisk -l | grep 'Disk.*/dev/sd[a-z]' |awk  '{print $2}' | sed s/://| sort| grep -v "/dev/sd[ab]$" `)
 
 	lsblk
 	install_package mdadm
@@ -2855,14 +2787,9 @@ function create_raid_and_mount() {
 	check_exit_status "$deviceName Raid format"
 
 	mkdir $mountdir
-	uuid=$(blkid $deviceName| sed "s/.*UUID=\"//"| sed "s/\".*\"//")
+	uuid=`blkid $deviceName| sed "s/.*UUID=\"//"| sed "s/\".*\"//"`
 	echo "UUID=$uuid $mountdir $format defaults 0 2" >> /etc/fstab
-	if [ -z "$mount_option" ]
-	then
-		mount $deviceName $mountdir
-	else
-		mount -o $mount_option $deviceName $mountdir
-	fi
+	mount $deviceName $mountdir
 	check_exit_status "RAID ($deviceName) mount on $mountdir as $format"
 }
 
@@ -2927,7 +2854,7 @@ function remote_copy () {
 		destination_path=$user@$host:$remote_path/
 	fi
 
-	status=$(sshpass -p $passwd scp -o StrictHostKeyChecking=no -P $port $source_path $destination_path 2>&1)
+	status=`sshpass -p $passwd scp -o StrictHostKeyChecking=no -P $port $source_path $destination_path 2>&1`
 	exit_status=$?
 	echo $status
 	return $exit_status
@@ -2955,7 +2882,7 @@ function remote_exec () {
 		port=22
 	fi
 
-	status=$(sshpass -p $passwd ssh -t -o StrictHostKeyChecking=no -p $port $user@$host $cmd 2>&1)
+	status=`sshpass -p $passwd ssh -t -o StrictHostKeyChecking=no -p $port $user@$host $cmd 2>&1`
 	exit_status=$?
 	echo $status
 	return $exit_status
@@ -2974,7 +2901,7 @@ function set_user_password {
 
 	hash=$(openssl passwd -1 $user_password)
 
-	string=$(echo $sudo_password | sudo -S cat /etc/shadow | grep $user)
+	string=`echo $sudo_password | sudo -S cat /etc/shadow | grep $user`
 
 	if [ "x$string" == "x" ]; then
 		echo "$user not found in /etc/shadow"
@@ -2986,7 +2913,7 @@ function set_user_password {
 
 	echo $sudo_password | sudo -S sed -i "s#^${array[0]}.*#$line#" /etc/shadow
 
-	if [ $(echo $sudo_password | sudo -S cat /etc/shadow| grep $line|wc -l) != "" ]; then
+	if [ `echo $sudo_password | sudo -S cat /etc/shadow| grep $line|wc -l` != "" ]; then
 		echo "Password set succesfully"
 	else
 		echo "failed to set password"
@@ -3004,16 +2931,16 @@ function collect_VM_properties () {
 	fi
 
 	echo "" > $output_file
-	echo ",OS type,"$(detect_linux_distribution) $(detect_linux_distribution_version) >> $output_file
-	echo ",Kernel version,"$(uname -r) >> $output_file
-	echo ",LIS Version,"$(get_lis_version) >> $output_file
-	echo ",Host Version,"$(get_host_version) >> $output_file
-	echo ",Total CPU cores,"$(nproc) >> $output_file
-	echo ",Total Memory,"$(free -h|grep Mem|awk '{print $2}') >> $output_file
-	echo ",Resource disks size,"$(lsblk|grep "^sdb"| awk '{print $4}')  >> $output_file
-	echo ",Data disks attached,"$(lsblk | grep "^sd" | awk '{print $1}' | sort | grep -v "sd[ab]$" | wc -l)  >> $output_file
-	echo ",eth0 MTU,"$(cat /sys/class/net/eth0/mtu) >> $output_file
-	echo ",eth1 MTU,"$(cat /sys/class/net/eth1/mtu) >> $output_file
+	echo ",OS type,"`detect_linux_distribution` `detect_linux_distribution_version` >> $output_file
+	echo ",Kernel version,"`uname -r` >> $output_file
+	echo ",LIS Version,"`get_lis_version` >> $output_file
+	echo ",Host Version,"`get_host_version` >> $output_file
+	echo ",Total CPU cores,"`nproc` >> $output_file
+	echo ",Total Memory,"`free -h|grep Mem|awk '{print $2}'` >> $output_file
+	echo ",Resource disks size,"`lsblk|grep "^sdb"| awk '{print $4}'`  >> $output_file
+	echo ",Data disks attached,"`lsblk | grep "^sd" | awk '{print $1}' | sort | grep -v "sd[ab]$" | wc -l`  >> $output_file
+	echo ",eth0 MTU,"`ifconfig eth0|grep MTU|sed "s/.*MTU:\(.*\) .*/\1/"` >> $output_file
+	echo ",eth1 MTU,"`ifconfig eth1|grep MTU|sed "s/.*MTU:\(.*\) .*/\1/"` >> $output_file
 }
 
 # Add command in startup files
@@ -3074,21 +3001,23 @@ declare DISTRO_VERSION=$(detect_linux_distribution_version)
 #   when starting from zero i.e. index 1 and 2 have no relation
 #   if captured output is empty then no VFs exist
 function get_synthetic_vf_pairs() {
+    all_ifs=$(ls /sys/class/net | grep -v lo)
     local ignore_if=$(ip route | grep default | awk '{print $5}')
-    local interfaces=$(ls /sys/class/net | grep -v lo | grep -v ${ignore_if})
 
     local synth_ifs=""
     local vf_ifs=""
     local interface
-    for interface in ${interfaces}; do
-		# alternative is, but then must always know driver name
-		# readlink -f /sys/class/net/<interface>/device/driver/
-		local bus_addr=$(ethtool -i ${interface} | grep bus-info | awk '{print $2}')
-		if [ -z "${bus_addr}" ]; then
-			synth_ifs="${synth_ifs} ${interface}"
-		else
-			vf_ifs="${vf_ifs} ${interface}"
-		fi
+    for interface in ${all_ifs}; do
+        if [ "${interface}" != "${ignore_if}" ]; then
+            # alternative is, but then must always know driver name
+            # readlink -f /sys/class/net/<interface>/device/driver/
+            local bus_addr=$(ethtool -i ${interface} | grep bus-info | awk '{print $2}')
+            if [ -z "${bus_addr}" ]; then
+                synth_ifs="${synth_ifs} ${interface}"
+            else
+                vf_ifs="${vf_ifs} ${interface}"
+            fi
+        fi
     done
 
     local synth_if
@@ -3128,266 +3057,3 @@ function source_script() {
         exit 1
     fi
 }
-
-function test_rsync() {
-    . net_constants.sh
-    ping -I vxlan0 242.0.0.11 -c 3
-    if [ $? -ne 0 ]; then
-        LogErr "Failed to ping the second vm through vxlan0 after configurations."
-        SetTestStateAborted
-        exit 1
-    else
-        LogMsg "Successfuly pinged the second vm through vxlan0 after configurations."
-        LogMsg "Starting to transfer files with rsync"
-        rsyncPara="ssh -o StrictHostKeyChecking=no -i /root/.ssh/$SSH_PRIVATE_KEY"
-        echo "rsync -e '$rsyncPara' -avz /root/test root@242.0.0.11:/root" | at now +1 minutes
-        SetTestStateCompleted
-        exit 0
-    fi
-}
-
-function test_rsync_files() {
-    ping -I vxlan0 242.0.0.12 -c 3
-    if [ $? -ne 0 ]; then
-        LogErr "Could not ping the first VM through the vxlan interface"
-        SetTestStateAborted
-        exit 1
-    else
-        LogMsg "Checking if the directory was transfered corectly."
-        if [ -d "/root/test" ]; then
-            echo "Test directory was found." >> summary.log
-            size=$(du -h /root/test | awk '{print $1;}')
-            if [ $size == "10G" ] || [ $size == "11G" ]; then
-                LogMsg "Test directory has the proper size. Test ended successfuly."
-                SetTestStateCompleted
-                exit 0
-            else
-                LogErr "Test directory doesn't have the proper size. Test failed."
-                SetTestStateFailed
-                exit 1
-            fi
-        else
-            LogErr "Test directory was not found"
-            SetTestStateFailed
-            exit 1
-        fi
-    fi
-}
-
-function change_mtu_increment() {
-    test_iface=$1
-    iface_ignore=$2
-
-    __iterator=0
-    declare -i current_mtu=0
-    declare -i const_max_mtu=61440
-    declare -i const_increment_size=4096
-    while [ "$current_mtu" -lt "$const_max_mtu" ]; do
-        sleep 2
-        current_mtu=$((current_mtu+const_increment_size))
-        ip link set dev "$test_iface" mtu "$current_mtu"
-        if [ 0 -ne $? ]; then
-            # we reached the maximum mtu for this interface. break loop
-            current_mtu=$((current_mtu-const_increment_size))
-            break
-        fi
-        # make sure mtu was set. otherwise, set test to failed
-        actual_mtu=$(ip -o link show "$test_iface" | cut -d ' ' -f5)
-        if [ x"$actual_mtu" != x"$current_mtu" ]; then
-            LogErr "Error: Set mtu on interface $test_iface to $current_mtu but ip reports mtu to be $actual_mtu"
-            return 1
-        fi
-        LogMsg "Successfully set mtu to $current_mtu on interface $test_iface"
-    done
-    max_mtu="$current_mtu"
-
-    # Hyper-V does not support multiple MTUs per endpoint, so we need to set the max MTU on all interfaces,
-    # including the interface ignored because it's used by the LIS framework.
-    # This can fail (e.g. the LIS connection uses a legacy adapter), but the test will continue
-    # and only issue a warning
-    if [ -n "$iface_ignore" ]; then
-        ip link set dev "$iface_ignore" mtu "$max_mtu"
-        # make sure mtu was set. otherwise, issue a warning
-        actual_mtu=$(ip -o link show "$iface_ignore" | cut -d ' ' -f5)
-        if [ x"$actual_mtu" != x"$max_mtu" ]; then
-            LogMsg "Set mtu on interface $iface_ignore to $max_mtu but ip reports mtu to be $actual_mtu"
-        fi
-    fi
-
-    return 0
-}
-
-function stop_firewall() {
-    GetDistro
-    case "$DISTRO" in
-        suse*)
-            status=$(systemctl is-active rcSuSEfirewall2)
-            if [ "$status" = "active" ]; then
-               /sbin/rcSuSEfirewall2 stop
-                if [ $? -ne 0 ]; then    
-                    return 1
-                fi
-            fi
-            ;;
-        ubuntu*|debian*)
-            ufw disable
-            if [ $? -ne 0 ]; then
-                return 1
-            fi
-            ;;
-        redhat* | centos* | fedora*)
-            service firewalld stop
-            if [ $? -ne 0 ]; then
-                exit 1
-            fi
-            iptables -F
-            iptables -X
-            ;;
-        *)
-            LogErr "OS Version not supported!"
-            return 1
-        ;;
-    esac
-    return 0
-}
-
-function Update_Kernel() {
-    GetDistro
-    case "$DISTRO" in
-        suse*)
-            zypper ar -f $opensuselink kernel
-            zypper --gpg-auto-import-keys --non-interactive dup -r kernel
-            retVal=$?
-            ;;
-        ubuntu*|debian*)
-            sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
-            retVal=$?
-            ;;
-        redhat* | centos* | fedora*)
-            yum install -y kernel
-            retVal=$?
-            ;;
-        *)
-            LogErr "Platform not supported yet!"
-            retVal=1
-            ;;
-    esac
-    return $retVal
-}
-
-Kill_Process()
-{
-    ips=$1
-    IFS=',' read -r -a array <<< "$ips"
-    for ip in "${array[@]}"
-    do
-        if [[ $(detect_linux_distribution) == coreos ]]; then
-            output="default"
-            while [[ ${#output} != 0 ]]; do
-                output=$(ssh $ip "docker ps -a | grep $2 ")
-                if [[ ${#output} == 0 ]]; then
-                    break
-                fi
-                pid=$(echo $output | awk '{print $1}')
-                ssh $ip "docker stop $pid; docker rm $pid"
-            done
-        else
-            ssh $ip "killall $2"
-        fi
-    done
-}
-
-Delete_Containers()
-{
-    containers=$(docker ps -a | grep -v 'CONTAINER ID' | awk '{print $1}')
-    for containerID in ${containers}
-    do
-        docker stop $containerID > /dev/null 2>&1
-        docker rm $containerID > /dev/null 2>&1
-    done
-}
-
-Get_BC_Command()
-{
-    bc_cmd=""
-    if [[ $(detect_linux_distribution) != coreos ]]; then
-        bc_cmd="bc"
-    else
-        Delete_Containers
-        docker run -t -d lisms/toolbox > /dev/null 2>&1
-        containerID=$(docker ps | grep -v 'CONTAINER ID' | awk '{print $1}')
-        bc_cmd="docker exec -i $containerID bc"
-    fi
-    echo $bc_cmd
-}
-
-function ConsumeMemory() {
-    if [ ! -e /proc/meminfo ]; then
-        echo "Error: ConsumeMemory no meminfo found. Make sure /proc is mounted" >> HotAdd.log 2>&1
-        return 1
-    fi
-    rm ~/HotAdd.log -f
-    __totalMem=$(cat /proc/meminfo | grep -i MemTotal | awk '{ print $2 }')
-    __totalMem=$((__totalMem/1024))
-    echo "ConsumeMemory: Total Memory found $__totalMem MB" >> HotAdd.log 2>&1
-    declare -i __chunks
-    declare -i __threads
-    declare -i duration
-    declare -i timeout
-    if [ $chunk -le 0 ]; then
-        __chunks=128
-    else
-        __chunks=512
-    fi
-    __threads=$(($memMB/__chunks))
-    if [ $timeoutStress -eq 0 ]; then
-        timeout=10000000
-        duration=$((10*__threads))
-    elif [ $timeoutStress -eq 1 ]; then
-        timeout=5000000
-        duration=$((5*__threads))
-    elif [ $timeoutStress -eq 2 ]; then
-        timeout=1000000
-        duration=$__threads
-    else
-        timeout=1
-        duration=30
-        __threads=4
-        __chunks=2048
-    fi
-    if [ $duration -ne 0 ]; then
-        duration=$duration
-    fi
-    echo "Stress-ng info: $__threads threads :: $__chunks MB chunk size :: $(($timeout/1000000)) seconds between chunks :: $duration seconds total stress time" >> HotAdd.log 2>&1
-    stress-ng -m $__threads --vm-bytes ${__chunks}M -t $duration --backoff $timeout
-    wait
-    return 0
-}
-
-function Format_Mount_NVME()
-{
-    if [[ $# == 2 ]]; then
-        local namespace=$1
-        local filesystem=$2
-    else
-        return 1
-    fi
-    # Partition disk
-    echo "Creating  partition on ${namespace} disk "
-    (echo n; echo p; echo 1; echo ; echo; echo ; echo w) | fdisk /dev/"${namespace}"
-    check_exit_status "${namespace} partition creation"
-    sleep 1
-    # Create fileSystem
-    echo "Creating ${filesystem} filesystem on ${namespace} disk "
-    echo "y" | mkfs."${filesystem}" -f "/dev/${namespace}p1"
-    check_exit_status "${filesystem} filesystem creation"
-    sleep 1
-    # Mount the disk
-    LogMsg "Mounting ${namespace}p1 disk "
-    mkdir "$namespace"
-    mount "/dev/${namespace}p1" "$namespace"
-    check_exit_status "${filesystem} filesystem Mount"
-    sleep 1
-    return 0
-}
-

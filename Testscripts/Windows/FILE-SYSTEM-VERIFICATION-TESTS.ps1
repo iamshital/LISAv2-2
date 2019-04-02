@@ -1,104 +1,66 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
+﻿# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-#
-# Description:
-#     This Powershell script will run xfstesting.sh bash script
-#     - It will construct the config file needed by xfstesting.sh
-#     - It will start xfstesting.sh. Max allowed run time is 3 hours.
-#     - If state.txt is in TestRunning state after 3 hours, it will
-#     abort the test.
-#######################################################################
-param([object] $AllVmData,
-      [object] $CurrentTestData
-    )
 
 function Main {
-    param (
-        $AllVmData,
-        $CurrentTestData
-    )
-    # Create test result
-    $currentTestResult = Create-TestResultObject
+    # Create test result 
+    $result = ""
+    $currentTestResult = CreateTestResultObject
     $resultArr = @()
-    $superuser = "root"
 
     try {
-        Provision-VMsForLisa -allVMData $allVMData -installPackagesOnRoleNames "none"
-        Copy-RemoteFiles -uploadTo $allVMData.PublicIP -port $allVMData.SSHPort `
-            -files $currentTestData.files -username $superuser -password $password -upload
-
-        # Construct xfstesting config file
-        $xfstestsConfig = Join-Path $env:TEMP "xfstests-config.config"
-        Write-LogInfo "Generating $xfstestsConfig..."
-        Set-Content -Value "" -Path $xfstestsConfig -NoNewline
+        ProvisionVMsForLisa -allVMData $allVMData -installPackagesOnRoleNames "none"
+        RemoteCopy -uploadTo $allVMData.PublicIP -port $allVMData.SSHPort -files $currentTestData.files -username "root" -password $password -upload
+        
+        $constantsFile = ".\Temp\xfstests-config.config"
+        LogMsg "Generating $constantsFile ..."
+        Set-Content -Value "" -Path $constantsFile -NoNewline
         foreach ($param in $currentTestData.TestParameters.param) {
             if ($param -imatch "FSTYP=") {
                 $TestFileSystem = ($param.Replace("FSTYP=",""))
-                Add-Content -Value "[$TestFileSystem]" -Path $xfstestsConfig
-                Write-LogInfo "[$TestFileSystem] added to xfstests-config.config"
+                Add-Content -Value "[$TestFileSystem]" -Path $constantsFile
+                LogMsg "[$TestFileSystem] added to constants.sh"
             }
-            Add-Content -Value "$param" -Path $xfstestsConfig
-            Write-LogInfo "$param added to xfstests-config.config"
+            Add-Content -Value "$param" -Path $constantsFile
+            LogMsg "$param added to constants.sh"
         }
-        Write-LogInfo "$xfstestsConfig created successfully"
+        LogMsg "$constantsFile created successfully..."
+        RemoteCopy -uploadTo $allVMData.PublicIP -port $allVMData.SSHPort -files $constantsFile -username "root" -password $password -upload
 
-        # Start the test script
-        Copy-RemoteFiles -uploadTo $allVMData.PublicIP -port $allVMData.SSHPort `
-            -files $xfstestsConfig -username $superuser -password $password -upload
-        Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
-            -password $password -command "/$superuser/xfstesting.sh" -RunInBackground | Out-Null
-        # Check the status of the run every minute
-        # If the run is longer than 3 hours, abort the test
-        $timeout = New-Timespan -Minutes 180
-        $sw = [diagnostics.stopwatch]::StartNew()
-        while ($sw.elapsed -lt $timeout) {
-            Start-Sleep -s 60
-            $state = Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort `
-                -username $superuser -password $password "cat state.txt"
-            if ($state -eq "TestCompleted") {
-                Write-LogInfo "xfstesting.sh finished the run successfully!"
-                break
-            } elseif ($state -eq "TestFailed") {
-                Write-LogErr "xfstesting.sh failed on the VM!"
-                break
-            }
-            Write-LogInfo "xfstesting.sh is still running!"
+        $out = RunLinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username "root" -password $password -command "chmod +x *.sh"
+        $testJob = RunLinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username "root" -password $password -command "/root/perf_xfstesting.sh -TestFileSystem $TestFileSystem" -RunInBackground
+
+        # region MONITOR TEST
+        while ((Get-Job -Id $testJob).State -eq "Running") {
+            $currentStatus = RunLinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username "root" -password $password -command "tail -1 XFSTestingConsole.log"
+            LogMsg "Current Test Staus : $currentStatus"
+            WaitFor -seconds 20
         }
-
-        # Get logs. An extra check for the previous $state is needed
-        # The test could actually hang. If state.txt is showing
-        # 'TestRunning' then abort the test
-        #####
-        # We first need to move copy from root folder to user folder for
-        # Collect-TestLogs function to work
-        Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
-            -password $password -command "cp * /home/$user" -ignoreLinuxExitCode:$true | Out-Null
-        $testResult = Collect-TestLogs -LogsDestination $LogDir -ScriptName `
-            $currentTestData.files.Split('\')[3].Split('.')[0] -TestType "sh"  -PublicIP `
-            $allVMData.PublicIP -SSHPort $allVMData.SSHPort -Username $user `
-            -password $password -TestName $currentTestData.testName
-        if ($state -eq "TestRunning") {
-            $resultArr += "ABORTED"
-            Write-LogErr "xfstesting.sh is still running after 4 hours!"
+        RemoteCopy -download -downloadFrom $allVMData.PublicIP -files "XFSTestingConsole.log" -downloadTo $LogDir -port $allVMData.SSHPort -username "root" -password $password
+        $XFSTestingConsole = Get-Content "$LogDir\XFSTestingConsole.log"
+        
+        if ($XFSTestingConsole -imatch "Passed all") {
+            $testResult = "PASS"
         } else {
-            $resultArr += $testResult
+            $testResult = "FAIL"
         }
 
-        Write-LogInfo "Test Completed."
-        Write-LogInfo "Test Result: $testResult"
+        foreach ( $line in $XFSTestingConsole.Split("`n")) {
+            LogMsg "$line"
+        }
     } catch {
-        $ErrorMessage = $_.Exception.Message
+        $ErrorMessage =  $_.Exception.Message
         $ErrorLine = $_.InvocationInfo.ScriptLineNumber
-        Write-LogInfo "EXCEPTION: $ErrorMessage at line: $ErrorLine"
+        LogMsg "EXCEPTION : $ErrorMessage at line: $ErrorLine"
     } finally {
+        $metaData = ""
         if (!$testResult) {
-            $testResult = "ABORTED"
+            $testResult = "Aborted"
         }
         $resultArr += $testResult
     }
 
-    $currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
-    return $currentTestResult.TestResult
+    $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+    return $currentTestResult.TestResult  
 }
 
-Main -AllVmData $AllVmData -CurrentTestData $CurrentTestData
+Main

@@ -1,196 +1,193 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-param([object] $AllVmData,
-	  [object] $CurrentTestData)
 
 function Main {
-	# Create test result
-	$superUser = "root"
-	$resultArr = @()
-	$currentTestResult = Create-TestResultObject
+    # Create test result 
+    $result = ""
+    $currentTestResult = CreateTestResultObject
+    $resultArr = @()
 
-	try {
-		$noClient = $true
-		$noServer = $true
-		foreach ($vmData in $allVMData) {
-			if ($vmData.RoleName -imatch "client") {
-				$clientVMData = $vmData
-				$noClient = $false
-			}
-			elseif ($vmData.RoleName -imatch "server") {
-				$noServer = $fase
-				$serverVMData = $vmData
-			}
-		}
-		if ($noClient) {
-			Throw "No any master VM defined. Be sure that, Client VM role name matches with the pattern `"*master*`". Aborting Test."
-		}
-		if ($noServer) {
-			Throw "No any slave VM defined. Be sure that, Server machine role names matches with pattern `"*slave*`" Aborting Test."
-		}
-		#region CONFIGURE VM FOR TERASORT TEST
-		Write-LogInfo "CLIENT VM details :"
-		Write-LogInfo "  RoleName : $($clientVMData.RoleName)"
-		Write-LogInfo "  Public IP : $($clientVMData.PublicIP)"
-		Write-LogInfo "  SSH Port : $($clientVMData.SSHPort)"
-		Write-LogInfo "  Internal IP : $($clientVMData.InternalIP)"
-		Write-LogInfo "SERVER VM details :"
-		Write-LogInfo "  RoleName : $($serverVMData.RoleName)"
-		Write-LogInfo "  Public IP : $($serverVMData.PublicIP)"
-		Write-LogInfo "  SSH Port : $($serverVMData.SSHPort)"
-		Write-LogInfo "  Internal IP : $($serverVMData.InternalIP)"
+    try {
+        $noClient = $true
+        $noServer = $true
+        foreach ($vmData in $allVMData) {
+            if ($vmData.RoleName -imatch "client") {
+                $clientVMData = $vmData
+                $noClient = $false
+            }
+            elseif ($vmData.RoleName -imatch "server") {
+                $noServer = $fase
+                $serverVMData = $vmData
+            }
+        }
+        if ($noClient) {
+            Throw "No any master VM defined. Be sure that, Client VM role name matches with the pattern `"*master*`". Aborting Test."
+        }
+        if ($noServer) {
+            Throw "No any slave VM defined. Be sure that, Server machine role names matches with pattern `"*slave*`" Aborting Test."
+        }
+        #region CONFIGURE VM FOR TERASORT TEST
+        LogMsg "CLIENT VM details :"
+        LogMsg "  RoleName : $($clientVMData.RoleName)"
+        LogMsg "  Public IP : $($clientVMData.PublicIP)"
+        LogMsg "  SSH Port : $($clientVMData.SSHPort)"
+        LogMsg "  Internal IP : $($clientVMData.InternalIP)"
+        LogMsg "SERVER VM details :"
+        LogMsg "  RoleName : $($serverVMData.RoleName)"
+        LogMsg "  Public IP : $($serverVMData.PublicIP)"
+        LogMsg "  SSH Port : $($serverVMData.SSHPort)"
+        LogMsg "  Internal IP : $($serverVMData.InternalIP)"
 
-		# PROVISION VMS FOR LISA WILL ENABLE ROOT USER AND WILL MAKE ENABLE PASSWORDLESS AUTHENTICATION ACROSS ALL VMS IN SAME HOSTED SERVICE.
-		Provision-VMsForLisa -allVMData $allVMData -installPackagesOnRoleNames "none"
-		#endregion
+        # PROVISION VMS FOR LISA WILL ENABLE ROOT USER AND WILL MAKE ENABLE PASSWORDLESS AUTHENTICATION ACROSS ALL VMS IN SAME HOSTED SERVICE.  
+        ProvisionVMsForLisa -allVMData $allVMData -installPackagesOnRoleNames "none"
+        #endregion
 
-		Write-LogInfo "Getting Active NIC Name."
-		$getNicCmd = ". ./utils.sh &> /dev/null && get_active_nic_name"
-		$clientNicName = (Run-LinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -command $getNicCmd).Trim()
-		$serverNicName = (Run-LinuxCmd -ip $clientVMData.PublicIP -port $serverVMData.SSHPort -username $superUser -password $password -command $getNicCmd).Trim()
-		if ($serverNicName -eq $clientNicName) {
-			Write-LogInfo "Client and Server VMs have same nic name: $clientNicName"
-		} else {
-			Throw "Server and client SRIOV NICs are not same."
-		}
-		if ($currentTestData.AdditionalHWConfig.Networking -imatch "SRIOV") {
-			$DataPath = "SRIOV"
-		} else {
-			$DataPath = "Synthetic"
-		}
-		Write-LogInfo "CLIENT $DataPath NIC: $clientNicName"
-		Write-LogInfo "SERVER $DataPath NIC: $serverNicName"
+        LogMsg "Getting Active NIC Name."
+        $clientNicName = (RunLinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username "root" -password $password -command "route | grep '^default' | grep -o '[^ ]*$' 2>&1 | ip route | grep default | tr ' ' '\n' | grep eth").Trim()
+        $serverNicName = (RunLinuxCmd -ip $clientVMData.PublicIP -port $serverVMData.SSHPort -username "root" -password $password -command "route | grep '^default' | grep -o '[^ ]*$' 2>&1 | ip route | grep default | tr ' ' '\n' | grep eth").Trim()
+        if ($serverNicName -eq $clientNicName) {
+            $nicName = $clientNicName
+        } else {
+            Throw "Server and client SRIOV NICs are not same."
+        }
+        if($EnableAcceleratedNetworking -or ($currentTestData.AdditionalHWConfig.Networking -imatch "SRIOV")) {
+            $DataPath = "SRIOV"
+        } else {
+            $DataPath = "Synthetic"
+        }
+        LogMsg "CLIENT $DataPath NIC: $clientNicName"
+        LogMsg "SERVER $DataPath NIC: $serverNicName"
 
-		Write-LogInfo "Generating constants.sh ..."
-		$constantsFile = "$LogDir\constants.sh"
-		Set-Content -Value "#Generated by Azure Automation." -Path $constantsFile
-		Add-Content -Value "vms=$($serverVMData.RoleName),$($clientVMData.RoleName)" -Path $constantsFile
-		Add-Content -Value "server=$($serverVMData.InternalIP)" -Path $constantsFile
-		Add-Content -Value "client=$($clientVMData.InternalIP)" -Path $constantsFile
-		Add-Content -Value "nicName=eth1" -Path $constantsFile
-		Add-Content -Value "pciAddress=0002:00:02.0" -Path $constantsFile
+        LogMsg "Generating constansts.sh ..."
+        $constantsFile = "$LogDir\constants.sh"
+        Set-Content -Value "#Generated by Azure Automation." -Path $constantsFile
+        Add-Content -Value "vms=$($serverVMData.RoleName),$($clientVMData.RoleName)" -Path $constantsFile
+        Add-Content -Value "server=$($serverVMData.InternalIP)" -Path $constantsFile
+        Add-Content -Value "client=$($clientVMData.InternalIP)" -Path $constantsFile
+        Add-Content -Value "nicName=eth1" -Path $constantsFile
+        Add-Content -Value "pciAddress=0002:00:02.0" -Path $constantsFile
 
-		foreach ($param in $currentTestData.TestParameters.param) {
-			Add-Content -Value "$param" -Path $constantsFile
-			if ($param -imatch "modes") {
-				$modes = ($param.Replace("modes=",""))
-			}
-		}
-		$detectedDistro = Detect-LinuxDistro -VIP $vmData.PublicIP -SSHport $vmData.SSHPort `
-				-testVMUser $user -testVMPassword $password
-		$currentKernelVersion = Run-LinuxCmd -ip $vmData.PublicIP -port $vmData.SSHPort `
-				-username $user -password $password -command "uname -r"
-		if (IsGreaterKernelVersion -actualKernelVersion $currentKernelVersion -detectedDistro $detectedDistro) {
-				Write-LogInfo "Confirmed Kernel version supported: $currentKernelVersion"
-		} else {
-			Write-LogErr "Unsupported Kernel version: $currentKernelVersion"
-			throw "Unsupported Kernel version: $currentKernelVersion"
-		}
+        foreach ($param in $currentTestData.TestParameters.param) {
+            Add-Content -Value "$param" -Path $constantsFile
+            if ($param -imatch "modes") {
+                $modes = ($param.Replace("modes=",""))
+            }
+        }
+        LogMsg "constanst.sh created successfully..."
+        LogMsg "test modes : $modes"
+        LogMsg (Get-Content -Path $constantsFile)
+        #endregion
 
-		Write-LogInfo "constants.sh created successfully..."
-		Write-LogInfo "test modes : $modes"
-		Write-LogInfo (Get-Content -Path $constantsFile)
-		#endregion
-
-		#region EXECUTE TEST
-		$myString = @"
+        #region EXECUTE TEST
+        $myString = @"
 cd /root/
 ./dpdkTestPmd.sh 2>&1 > dpdkConsoleLogs.txt
 . utils.sh
 collect_VM_properties
 "@
-		Set-Content "$LogDir\StartDpdkTestPmd.sh" $myString
-		Copy-RemoteFiles -uploadTo $clientVMData.PublicIP -port $clientVMData.SSHPort -files "$constantsFile,$LogDir\StartDpdkTestPmd.sh" -username $superUser -password $password -upload
+        Set-Content "$LogDir\StartDpdkTestPmd.sh" $myString
+        RemoteCopy -uploadTo $clientVMData.PublicIP -port $clientVMData.SSHPort -files ".\$constantsFile,.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\dpdkSetup.sh,.\Testscripts\Linux\dpdkTestPmd.sh,.\$LogDir\StartDpdkTestPmd.sh" -username "root" -password $password -upload
+        RemoteCopy -uploadTo $clientVMData.PublicIP -port $clientVMData.SSHPort -files $currentTestData.files -username "root" -password $password -upload
 
-		Run-LinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -command "chmod +x *.sh" | Out-Null
-		$testJob = Run-LinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -command "./StartDpdkTestPmd.sh" -RunInBackground
-		#endregion
+        $out = RunLinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username "root" -password $password -command "chmod +x *.sh"
+        $testJob = RunLinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username "root" -password $password -command "./StartDpdkTestPmd.sh" -RunInBackground
+        #endregion
 
-		#region MONITOR TEST
-		while ((Get-Job -Id $testJob).State -eq "Running") {
-			$currentStatus = Run-LinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -command "tail -2 dpdkConsoleLogs.txt | head -1"
-			Write-LogInfo "Current Test Status : $currentStatus"
-			Wait-Time -seconds 20
-		}
-		$finalStatus = Run-LinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -command "cat /root/state.txt"
-		Copy-RemoteFiles -downloadFrom $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -download -downloadTo $LogDir -files "*.csv, *.txt, *.log"
+        #region MONITOR TEST
+        while ((Get-Job -Id $testJob).State -eq "Running") {
+            $currentStatus = RunLinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username "root" -password $password -command "tail -2 dpdkConsoleLogs.txt | head -1"
+            LogMsg "Current Test Staus : $currentStatus"
+            WaitFor -seconds 20
+        }
+        $finalStatus = RunLinuxCmd -ip $clientVMData.PublicIP -port $clientVMData.SSHPort -username "root" -password $password -command "cat /root/state.txt"
+        RemoteCopy -downloadFrom $clientVMData.PublicIP -port $clientVMData.SSHPort -username "root" -password $password -download -downloadTo $LogDir -files "*.csv, *.txt, *.log, *.tar.gz"
+        
+        if ($finalStatus -imatch "TestFailed") {
+            LogErr "Test failed. Last known status : $currentStatus."
+            $testResult = "FAIL"
+        }
+        elseif ($finalStatus -imatch "TestAborted") {
+            LogErr "Test Aborted. Last known status : $currentStatus."
+            $testResult = "ABORTED"
+        }
+        elseif ($finalStatus -imatch "TestCompleted") {
+            LogMsg "Test Completed."
+            $testResult = "PASS"
+        }
+        elseif ($finalStatus -imatch "TestRunning") {
+            LogMsg "Powershell backgroud job for test is completed but VM is reporting that test is still running. Please check $LogDir\zkConsoleLogs.txt"
+            LogMsg "Contests of summary.log : $testSummary"
+            $testResult = "PASS"
+        }
+        
+        try {
+            $testpmdDataCsv = Import-Csv -Path $LogDir\dpdkTestPmd.csv
+            LogMsg "Uploading the test results.."
+            $dataSource = $xmlConfig.config.Azure.database.server
+            $DBuser = $xmlConfig.config.Azure.database.user
+            $DBpassword = $xmlConfig.config.Azure.database.password
+            $database = $xmlConfig.config.Azure.database.dbname
+            $dataTableName = $xmlConfig.config.Azure.database.dbtable
+            $TestCaseName = $xmlConfig.config.Azure.database.testTag
+            
+            if ($dataSource -And $DBuser -And $DBpassword -And $database -And $dataTableName) {
+                $GuestDistro = cat "$LogDir\VM_properties.csv" | Select-String "OS type"| %{$_ -replace ",OS type,",""}
+                if ($UseAzureResourceManager) {
+                    $HostType = "Azure-ARM"
+                } else {
+                    $HostType = "Azure"
+                }
+                
+                $HostBy = ($xmlConfig.config.Azure.General.Location).Replace('"','')
+                $HostOS = cat "$LogDir\VM_properties.csv" | Select-String "Host Version"| %{$_ -replace ",Host Version,",""}
+                $GuestOSType = "Linux"
+                $GuestDistro = cat "$LogDir\VM_properties.csv" | Select-String "OS type"| %{$_ -replace ",OS type,",""}
+                $GuestSize = $clientVMData.InstanceSize
+                $KernelVersion = cat "$LogDir\VM_properties.csv" | Select-String "Kernel version"| %{$_ -replace ",Kernel version,",""}
+                $IPVersion = "IPv4"
+                $ProtocolType = "TCP"
+                $connectionString = "Server=$dataSource;uid=$DBuser; pwd=$DBpassword;Database=$database;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
 
-		if ($finalStatus -imatch "TestFailed") {
-			Write-LogErr "Test failed. Last known status : $currentStatus."
-			$testResult = "FAIL"
-		}
-		elseif ($finalStatus -imatch "TestAborted") {
-			Write-LogErr "Test Aborted. Last known status : $currentStatus."
-			$testResult = "ABORTED"
-		}
-		elseif ($finalStatus -imatch "TestCompleted") {
-			Write-LogInfo "Test Completed."
-			$testResult = "PASS"
-			Copy-RemoteFiles -downloadFrom $clientVMData.PublicIP -port $clientVMData.SSHPort -username $superUser -password $password -download -downloadTo $LogDir -files "*.tar.gz"
-		}
-		elseif ($finalStatus -imatch "TestRunning") {
-			Write-LogInfo "Powershell background job for test is completed but VM is reporting that test is still running. Please check $LogDir\dpdkConsoleLogs.txt"
-			Write-LogInfo "Content of summary.log : $testSummary"
-			$testResult = "PASS"
-		}
+                $SQLQuery = "INSERT INTO $dataTableName (TestPlatFrom,TestCaseName,TestDate,HostType,HostBy,HostOS,GuestOSType,GuestDistro,GuestSize,KernelVersion,LISVersion,IPVersion,ProtocolType,DataPath,DPDKVersion,TestMode,Max_Rxpps,Txpps,Rxpps,Txbytes,Rxbytes,Txpackets,Rxpackets,Re_Txpps,Re_Txbytes,Re_Txpackets,Tx_PacketSize_KBytes,Rx_PacketSize_KBytes) VALUES "
+                foreach ($mode in $testpmdDataCsv) {
+                    $SQLQuery += "('$TestPlatform','$TestCaseName','$(Get-Date -Format yyyy-MM-dd)','$HostType','$HostBy','$HostOS','$GuestOSType','$GuestDistro','$GuestSize','$KernelVersion','Inbuilt','$IPVersion','$ProtocolType','$DataPath','$($mode.DpdkVersion)','$($mode.TestMode)','$($mode.MaxRxPps)','$($mode.TxPps)','$($mode.RxPps)','$($mode.TxBytes)','$($mode.RxBytes)','$($mode.TxPackets)','$($mode.RxPackets)','$($mode.ReTxPps)','$($mode.ReTxBytes)','$($mode.ReTxPackets)','$($mode.TxPacketSize)','$($mode.RxPacketSize)'),"
+                    LogMsg "Collected performace data for $($mode.TestMode) mode."
+                }
+                $SQLQuery = $SQLQuery.TrimEnd(',')
+                LogMsg $SQLQuery
+                $connection = New-Object System.Data.SqlClient.SqlConnection
+                $connection.ConnectionString = $connectionString
+                $connection.Open()
 
-		$testpmdDataCsv = Import-Csv -Path $LogDir\dpdkTestPmd.csv
-		if ($testResult -eq "PASS") {
-			Write-LogInfo "Generating the performance data for database insertion"
-			$properties = Get-VMProperties -PropertyFilePath "$LogDir\VM_properties.csv"
-			$testDate = $(Get-Date -Format yyyy-MM-dd)
-			foreach ($mode in $testpmdDataCsv) {
-				$resultMap = @{}
-				if ($properties) {
-					$resultMap["GuestDistro"] = $properties.GuestDistro
-					$resultMap["HostOS"] = $properties.HostOS
-					$resultMap["KernelVersion"] = $properties.KernelVersion
-				}
-				$resultMap["HostType"] = "Azure"
-				$resultMap["HostBy"] = $global:TestLocation
-				$resultMap["GuestOSType"] = "Linux"
-				$resultMap["GuestSize"] = $clientVMData.InstanceSize
-				$resultMap["IPVersion"] = "IPv4"
-				$resultMap["ProtocolType"] = "TCP"
-				$resultMap["TestPlatFrom"] = $global:TestPlatForm
-				$resultMap["TestCaseName"] = $global:GlobalConfig.Global.Azure.ResultsDatabase.testTag
-				$resultMap["TestDate"] = $testDate
-				$resultMap["LISVersion"] = "Inbuilt"
-				$resultMap["DataPath"] = $DataPath
-				$resultMap["DPDKVersion"] = $mode.DpdkVersion
-				$resultMap["TestMode"] = $mode.TestMode
-				$resultMap["Cores"] = [int32]($mode.Cores)
-				$resultMap["Max_Rxpps"] = [int64]($mode.MaxRxPps)
-				$resultMap["Txpps"] = [int64]($mode.TxPps)
-				$resultMap["Rxpps"] = [int64]($mode.RxPps)
-				$resultMap["Fwdpps"] = [int64]($mode.FwdPps)
-				$resultMap["Txbytes"] = [int64]($mode.TxBytes)
-				$resultMap["Rxbytes"] = [int64]($mode.RxBytes)
-				$resultMap["Fwdbytes"] = [int64]($mode.FwdBytes)
-				$resultMap["Txpackets"] = [int64]($mode.TxPackets)
-				$resultMap["Rxpackets"] = [int64]($mode.RxPackets)
-				$resultMap["Fwdpackets"] = [int64]($mode.FwdPackets)
-				$resultMap["Tx_PacketSize_KBytes"] = [Decimal]($mode.TxPacketSize)
-				$resultMap["Rx_PacketSize_KBytes"] = [Decimal]($mode.RxPacketSize)
-				Write-LogInfo "Collected performance data for $($mode.TestMode) mode."
-				$currentTestResult.TestResultData += $resultMap
-			}
-		}
-		Write-LogInfo "Test result : $testResult"
-		Write-LogInfo ($testpmdDataCsv | Format-Table | Out-String)
-	} catch {
-		$ErrorMessage =  $_.Exception.Message
-		$ErrorLine = $_.InvocationInfo.ScriptLineNumber
-		Write-LogErr "EXCEPTION : $ErrorMessage at line: $ErrorLine"
-		$testResult = "FAIL"
-	} finally {
-		if (!$testResult) {
-			$testResult = "Aborted"
-		}
-		$resultArr += $testResult
-	}
-	$currentTestResult.TestResult = Get-FinalResultHeader -resultarr $resultArr
-	return $currentTestResult
+                $command = $connection.CreateCommand()
+                $command.CommandText = $SQLQuery
+                
+                $result = $command.executenonquery()
+                $connection.Close()
+                LogMsg "Uploading the test results done!!"
+            } else {
+                LogMsg "Invalid database details. Failed to upload result to database!"
+            }
+        } catch {
+            $ErrorMessage =  $_.Exception.Message
+            throw "$ErrorMessage"
+        }
+        LogMsg "Test result : $testResult"
+        LogMsg ($testpmdDataCsv | Format-Table | Out-String)
+    } catch {
+        $ErrorMessage =  $_.Exception.Message
+        $ErrorLine = $_.InvocationInfo.ScriptLineNumber
+        LogMsg "EXCEPTION : $ErrorMessage at line: $ErrorLine"
+    } finally {
+        $metaData = "DPDK RESULT"
+        if (!$testResult) {
+            $testResult = "Aborted"
+        }
+        $resultArr += $testResult
+        $currentTestResult.TestSummary +=  CreateResultSummary -testResult $testResult -metaData "DPDK-TESTPMD" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+    }
+    $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+    return $currentTestResult.TestResult  
 }
 
 Main

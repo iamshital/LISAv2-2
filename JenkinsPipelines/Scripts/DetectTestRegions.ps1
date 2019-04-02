@@ -12,11 +12,11 @@
 	<Parameters>
 
 .INPUTS
-
+	
 
 .NOTES
-    Creation Date:
-    Purpose/Change:
+    Creation Date:  
+    Purpose/Change: 
 
 .EXAMPLE
 
@@ -29,13 +29,9 @@ param
     $TestByTestName="",
     $TestByCategorizedTestName="",
     $TestByCategory="",
-    $TestByTag="",
-    $LogFileName = "DetectTestRegions.log"
+    $TestByTag=""
 )
-
-Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
 
 $TestRegions = @()
 
@@ -69,9 +65,9 @@ if ( $TestByTag )
 }
 
 $UniqueTestRegions = $TestRegions | Sort-Object |  Get-Unique
-Write-LogInfo "Selected test regions:"
+LogMsg "Selected test regions:"
 $i = 1
 $CurrentTestRegions = ""
 Set-Content -Value "" -Path .\CurrentTestRegions.azure.env -Force -NoNewline
-$UniqueTestRegions | ForEach-Object { Write-LogInfo "$i. $_"; $i += 1; $CurrentTestRegions += "$_," }
+$UniqueTestRegions | ForEach-Object { LogMsg "$i. $_"; $i += 1; $CurrentTestRegions += "$_," }
 Set-Content -Value $CurrentTestRegions.TrimEnd(",") -Path .\CurrentTestRegions.azure.env -Force -NoNewline -Verbose

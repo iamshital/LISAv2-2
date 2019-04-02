@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
+import argparse
+import sys
 import re
 from azuremodules import *
 
@@ -8,7 +10,6 @@ file_path = os.path.dirname(os.path.realpath(__file__))
 constants_path = os.path.join(file_path, "constants.sh")
 params = GetParams(constants_path)
 distro = params["DETECTED_DISTRO"]
-
 
 def RunTest(command):
     UpdateState("TestRunning")

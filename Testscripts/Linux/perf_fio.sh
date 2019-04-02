@@ -1,17 +1,19 @@
 #!/bin/bash
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
-#
+# 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
+# 
 #
-#
+# Sample script to run sysbench.
 # In this script, we want to bench-mark device IO performance on a mounted folder.
 # You can adapt this script to other situations easily like for stripe disks as RAID0.
 # The only thing to keep in mind is that each different configuration you're testing
 # must log its output to a different directory.
+#
 
 HOMEDIR="/root"
 LogMsg()
@@ -19,6 +21,8 @@ LogMsg()
 	echo "[$(date +"%x %r %Z")] ${1}"
 	echo "[$(date +"%x %r %Z")] ${1}" >> "${HOMEDIR}/runlog.txt"
 }
+LogMsg "Sleeping 10 seconds.."
+sleep 10
 
 CONSTANTS_FILE="$HOMEDIR/constants.sh"
 UTIL_FILE="$HOMEDIR/utils.sh"
@@ -50,181 +54,207 @@ UpdateTestState()
 
 RunFIO()
 {
-	UpdateTestState $ICA_TESTRUNNING
-	FILEIO="--size=${fileSize} --direct=1 --ioengine=libaio --filename=${mdVolume} --overwrite=1 "
-	if [ -n "${NVME}" ]; then
-		FILEIO="--direct=1 --ioengine=libaio --filename=${nvme_namespaces} --gtod_reduce=1"
-	fi
-	iteration=0
-	io_increment=128
-	NUM_JOBS=(1 1 2 2 4 4 8 8 8 8 8 8)
+	UpdateTestState ICA_TESTRUNNING
+	FILEIO="--size=${fileSize} --direct=1 --ioengine=libaio --filename=fiodata --overwrite=1  "
 
-	# Log Config
+	####################################
+	#All run config set here
+	#
+
+	#Log Config
+	
 	mkdir $HOMEDIR/FIOLog/jsonLog
 	mkdir $HOMEDIR/FIOLog/iostatLog
 	mkdir $HOMEDIR/FIOLog/blktraceLog
 
-	# LOGDIR="${HOMEDIR}/FIOLog"
+	#LOGDIR="${HOMEDIR}/FIOLog"
 	JSONFILELOG="${LOGDIR}/jsonLog"
 	IOSTATLOGDIR="${LOGDIR}/iostatLog"
-	LOGFILE="${LOGDIR}/fio-test.log.txt"
+	BLKTRACELOGDIR="${LOGDIR}/blktraceLog"
+	LOGFILE="${LOGDIR}/fio-test.log.txt"	
 
-	# redirect blktrace files directory
+	#redirect blktrace files directory
 	Resource_mount=$(mount -l | grep /sdb1 | awk '{print$3}')
 	blk_base="${Resource_mount}/blk-$(date +"%m%d%Y-%H%M%S")"
 	mkdir $blk_base
+	#
+	#
+	#Test config
+	#
+	#
+
+	#All possible values for file-test-mode are randread randwrite read write
+	#modes='randread randwrite read write'
+	iteration=0
+	#startThread=1
+	#startIO=8
+	#numjobs=1
+
+	#Max run config
+	#ioruntime=300
+	#maxThread=1024
+	#maxIO=8
+	io_increment=128
 
 	####################################
-	LogMsg "Test log created at: ${LOGFILE}"
-	LogMsg "===================================== Starting Run $(date +"%x %r %Z") ================================"
+	echo "Test log created at: ${LOGFILE}"
+	echo "===================================== Starting Run $(date +"%x %r %Z") ================================"
+	echo "===================================== Starting Run $(date +"%x %r %Z") script generated 2/9/2015 4:24:44 PM ================================" >> $LOGFILE
 
 	chmod 666 $LOGFILE
-	LogMsg "--- Kernel Version Information ---"
+	echo "Preparing Files: $FILEIO"
+	echo "Preparing Files: $FILEIO" >> $LOGFILE
+	LogMsg "Preparing Files: $FILEIO"
+	# Remove any old files from prior runs (to be safe), then prepare a set of new files.
+	rm fiodata
+	echo "--- Kernel Version Information ---" >> $LOGFILE
 	uname -a >> $LOGFILE
 	cat /proc/version >> $LOGFILE
-	if [ -f /usr/share/clear/version ]; then
-		cat /usr/share/clear/version >> $LOGFILE
-	elif [[ -n $(ls /etc/*-release) ]]; then
-		cat /etc/*-release >> $LOGFILE
-	fi
-	LogMsg "--- PCI Bus Information ---"
+	cat /etc/*-release >> $LOGFILE
+	echo "--- PCI Bus Information ---" >> $LOGFILE
 	lspci >> $LOGFILE
+	echo "--- Drive Mounting Information ---" >> $LOGFILE
+	mount >> $LOGFILE
+	echo "--- Disk Usage Before Generating New Files ---" >> $LOGFILE
 	df -h >> $LOGFILE
 	fio --cpuclock-test >> $LOGFILE
+	fio $FILEIO --readwrite=read --bs=1M --runtime=1 --iodepth=128 --numjobs=8 --name=prepare
+	echo "--- Disk Usage After Generating New Files ---" >> $LOGFILE
+	df -h >> $LOGFILE
+	echo "=== End Preparation  $(date +"%x %r %Z") ===" >> $LOGFILE
+	LogMsg "Preparing Files: $FILEIO: Finished."
 	####################################
-	# Trigger run from here
-	for testmode in "${modes[@]}"; do
+	#Trigger run from here
+	for testmode in $modes; do
 		io=$startIO
 		while [ $io -le $maxIO ]
 		do
-			numJobIterator=0
-			qDepth=$startQDepth
-			while [ $qDepth -le $maxQDepth ]
+			Thread=$startThread			
+			while [ $Thread -le $maxThread ]
 			do
-				numJob=${NUM_JOBS[$numJobIterator]}
-				if [ -z "$numJob" ]; then
-					numJob=${NUM_JOBS[-1]}
+				if [ $Thread -ge 8 ]
+				then
+					numjobs=8
+				else
+					numjobs=$Thread
 				fi
-				if [ -n "${NVME}" ]; then
-					# NVMe perf tests requires that numJob param should match the vCPU number
-					numJob=$(nproc)
-				fi
-				thread=$((qDepth/numJob))
-
-				iostatfilename="${IOSTATLOGDIR}/iostat-fio-${testmode}-${io}K-${thread}td.txt"
-				nohup $iostat_cmd -x 5 -t -y > $iostatfilename &
-				LogMsg "-- iteration ${iteration} ----------------------------- ${testmode} test, ${io}K bs, ${thread} threads, ${numJob} jobs, 5 minutes ------------------ $(date +"%x %r %Z") ---"
-				LogMsg "Running ${testmode} test, ${io}K bs, ${qDepth} qdepth (${thread} X ${numJob})..."
-				jsonfilename="${JSONFILELOG}/fio-result-${testmode}-${io}K-${qDepth}td.json"
-				LogMsg "${fio_cmd} $FILEIO --readwrite=${testmode} --bs=${io}K --runtime=${ioruntime} --iodepth=${thread} --numjob=${numJob} --output-format=json --output=${jsonfilename} --name='iteration'${iteration}"
-				$fio_cmd $FILEIO --readwrite=$testmode --bs=${io}K --runtime=$ioruntime --iodepth=$thread --numjob=$numJob --output-format=json --output=$jsonfilename --name="iteration"${iteration} >> $LOGFILE
-				if [ $? -ne 0 ]; then
-					LogMsg "Error: Failed to run fio"
-					UpdateTestState $ICA_TESTFAILED
-					exit 1
-				fi
-				iostatPID=$(ps -ef | awk '/iostat/ && !/awk/ { print $2 }')
+				iostatfilename="${IOSTATLOGDIR}/iostat-fio-${testmode}-${io}K-${Thread}td.txt"
+				nohup iostat -x 5 -t -y > $iostatfilename &
+				#capture blktrace output during test
+				#LogMsg "INFO: start blktrace for 40 sec on device sdd and sdf"				
+				#blk_operation="${blk_base}/blktrace-fio-${testmode}-${io}K-${Thread}td/"							
+				#mkdir $blk_operation
+				#blktrace -w 40 -d /dev/sdf -D $blk_operation &
+				#blktrace -w 40 -d /dev/sdm -D $blk_operation &
+				echo "-- iteration ${iteration} ----------------------------- ${testmode} test, ${io}K bs, ${Thread} threads, ${numjobs} jobs, 5 minutes ------------------ $(date +"%x %r %Z") ---" >> $LOGFILE
+				LogMsg "Running ${testmode} test, ${io}K bs, ${Thread} threads ..."
+				jsonfilename="${JSONFILELOG}/fio-result-${testmode}-${io}K-${Thread}td.json"
+				fio $FILEIO --readwrite=$testmode --bs=${io}K --runtime=$ioruntime --iodepth=$Thread --numjobs=$numjobs --output-format=json --output=$jsonfilename --name="iteration"${iteration} >> $LOGFILE
+				#fio $FILEIO --readwrite=$testmode --bs=${io}K --runtime=$ioruntime --iodepth=$Thread --numjobs=$numjobs --name="iteration"${iteration} --group_reporting >> $LOGFILE
+				iostatPID=`ps -ef | awk '/iostat/ && !/awk/ { print $2 }'`
 				kill -9 $iostatPID
-				qDepth=$((qDepth*2))
-				iteration=$((iteration+1))
-				numJobIterator=$((numJobIterator+1))
-				if [[ $(detect_linux_distribution) == coreos ]]; then
-					Kill_Process 127.0.0.1 fio
-				fi
+				Thread=$(( Thread*2 ))		
+				iteration=$(( iteration+1 ))
 			done
-		io=$((io * io_increment))
+		io=$(( io * io_increment ))
 		done
 	done
 	####################################
-	LogMsg "===================================== Completed Run at $(date +"%x %r %Z") ================================"
+	echo "===================================== Completed Run $(date +"%x %r %Z") script generated 2/9/2015 4:24:44 PM ================================" >> $LOGFILE
+	rm fiodata
 
 	compressedFileName="${HOMEDIR}/FIOTest-$(date +"%m%d%Y-%H%M%S").tar.gz"
 	LogMsg "INFO: Please wait...Compressing all results to ${compressedFileName}..."
 	tar -cvzf $compressedFileName $LOGDIR/
 
-	LogMsg "Test logs are located at ${LOGDIR}"
-	UpdateTestState $ICA_TESTCOMPLETED
+	echo "Test logs are located at ${LOGDIR}"
+	UpdateTestState ICA_TESTCOMPLETED
 }
 
-CreateRAID0()
-{
-	disks=$(ls -l /dev | grep sd[c-z]$ | awk '{print $10}')
 
+CreateRAID0()
+{	
+	disks=$(ls -l /dev | grep sd[c-z]$ | awk '{print $10}')
+	#disks=(`fdisk -l | grep 'Disk.*/dev/sd[a-z]' |awk  '{print $2}' | sed s/://| sort| grep -v "/dev/sd[ab]$" `)
+	
 	LogMsg "INFO: Check and remove RAID first"
-	mdvol=$(cat /proc/mdstat | grep active | awk {'print $1'})
+	mdvol=$(cat /proc/mdstat | grep "active raid" | awk {'print $1'})
 	if [ -n "$mdvol" ]; then
-		LogMsg "/dev/${mdvol} already exist...removing first"
+		echo "/dev/${mdvol} already exist...removing first"
 		umount /dev/${mdvol}
 		mdadm --stop /dev/${mdvol}
 		mdadm --remove /dev/${mdvol}
 		mdadm --zero-superblock /dev/sd[c-z][1-5]
 	fi
-
+	
 	LogMsg "INFO: Creating Partitions"
 	count=0
 	for disk in ${disks}
-	do
-		LogMsg "formatting disk /dev/${disk}"
+	do		
+		echo "formatting disk /dev/${disk}"
 		(echo d; echo n; echo p; echo 1; echo; echo; echo t; echo fd; echo w;) | fdisk /dev/${disk}
-		count=$(($count + 1))
+		count=$(( $count + 1 ))
 		sleep 1
 	done
 	LogMsg "INFO: Creating RAID of ${count} devices."
 	sleep 1
 	mdadm --create ${mdVolume} --level 0 --raid-devices ${count} /dev/sd[c-z][1-5]
-}
-
-ConfigNVME()
-{
-	install_package "nvme-cli"
-	namespace_list=$(ls -l /dev | grep -w nvme[0-9]n[0-9]$ | awk '{print $10}')
-	nvme_namespaces=""
-	for namespace in ${namespace_list}; do
-		nvme format /dev/${namespace}
-		sleep 1
-		(echo d; echo w) | fdisk /dev/${namespace}
-		sleep 1
-		echo 0 > /sys/block/${namespace}/queue/rq_affinity
-		sleep 1
-		nvme_namespaces="${nvme_namespaces}/dev/${namespace}:"
-	done
-	# Deleting last char of string (:)
-	nvme_namespaces=${nvme_namespaces%?}
-
-	# Set the remaining variables
-	# NVMe perf tests will have a starting qdepth equal to vCPU number
-	startQDepth=$(nproc)
-	# NVMe perf tests will have a max qdepth equal to vCPU number x 256
-	maxQDepth=$(($(nproc) * 256))
+	sleep 1
+	time mkfs -t $1 -F ${mdVolume}
+	mkdir ${mountDir}
+	sleep 1
+	mount -o nobarrier ${mdVolume} ${mountDir}
+	if [ $? -ne 0 ]; then
+		LogMsg "Error: Unable to create raid"
+		exit 1
+	else
+		LogMsg "${mdVolume} mounted to ${mountDir} successfully."
+	fi
+	
+	#LogMsg "INFO: adding fstab entry"
+	#echo "${mdVolume}	${mountDir}	ext4	defaults	1 1" >> /etc/fstab
 }
 
 CreateLVM()
-{
+{	
 	disks=$(ls -l /dev | grep sd[c-z]$ | awk '{print $10}')
+	#disks=(`fdisk -l | grep 'Disk.*/dev/sd[a-z]' |awk  '{print $2}' | sed s/://| sort| grep -v "/dev/sd[ab]$" `)
+	
+	#LogMsg "INFO: Check and remove LVM first"
 	vgExist=$(vgdisplay)
 	if [ -n "$vgExist" ]; then
 		umount ${mountDir}
 		lvremove -A n -f /dev/${vggroup}/lv1
 		vgremove ${vggroup} -f
 	fi
-
+	
 	LogMsg "INFO: Creating Partition"
 	count=0
 	for disk in ${disks}
-	do
+	do		
 		echo "formatting disk /dev/${disk}"
 		(echo d; echo n; echo p; echo 1; echo; echo; echo t; echo fd; echo w;) | fdisk /dev/${disk}
-		count=$(( $count + 1 ))
+		count=$(( $count + 1 )) 
 	done
-
+	
 	LogMsg "INFO: Creating LVM with all data disks"
 	pvcreate /dev/sd[c-z][1-5]
 	vgcreate ${vggroup} /dev/sd[c-z][1-5]
 	lvcreate -l 100%FREE -i 12 -I 64 ${vggroup} -n lv1
+	time mkfs -t $1 -F /dev/${vggroup}/lv1
+	mkdir ${mountDir}
+	mount -o nobarrier /dev/${vggroup}/lv1 ${mountDir}
+	if [ $? -ne 0 ]; then
+		LogMsg "Error: Unable to create LVM "
+		exit 1
+	fi
+	
+	#LogMsg "INFO: adding fstab entry"
+	#echo "${mdVolume}	${mountDir}	ext4	defaults	1 1" >> /etc/fstab
 }
 
 ############################################################
-# Main body
+#	Main body
 ############################################################
 
 HOMEDIR=$HOME
@@ -238,33 +268,18 @@ else
 	mdVolume="/dev/md0"
 fi
 vggroup="vg1"
+mountDir="/data"
 cd ${HOMEDIR}
 
 install_fio
 
-if [ $? -ne 0 ]; then
-	LogMsg "Error: install fio failed"
-	UpdateTestState "TestAborted"
-	exit 1
-fi
+#Creating RAID before triggering test
+CreateRAID0 ext4
+#CreateLVM ext4
 
-if [[ $(detect_linux_distribution) == coreos ]]; then
-	Delete_Containers
-	fio_cmd="docker run -v $HOMEDIR/FIOLog/jsonLog:$HOMEDIR/FIOLog/jsonLog --device ${mdVolume} lisms/fio"
-	iostat_cmd="docker run --network host lisms/toolbox iostat"
-else
-	fio_cmd="fio"
-	iostat_cmd="iostat"
-fi
-
-# Creating RAID before triggering test
-if [ -n "${NVME}" ]; then
-	ConfigNVME
-else
-	CreateRAID0
-fi
-
-# Run test from here
+#Run test from here
 LogMsg "*********INFO: Starting test execution*********"
+cd ${mountDir}
+mkdir sampleDIR
 RunFIO
 LogMsg "*********INFO: Script execution reach END. Completed !!!*********"

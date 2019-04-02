@@ -2,10 +2,14 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the Apache License.
 from azuremodules import *
+import argparse
 import os
 
-white_list_xml = "ignorable-walalog-errors.xml"
+parser = argparse.ArgumentParser()
+parser.add_argument('-wl', '--whitelist', help='specify the xml file which contains the ignorable errors')
 
+args = parser.parse_args()
+white_list_xml = args.whitelist
 
 def RunTest():
     UpdateState("TestRunning")
@@ -37,21 +41,20 @@ def RunTest():
         else:
             ResultLog.info('PASS')
         UpdateState("TestCompleted")
-
-
+		
 def RemoveIgnorableMessages(messages, keywords):
-    matchstring = re.findall(keywords, messages, re.M)
-    matchcount = 0
-    index = 0
+    matchstring = re.findall(keywords,messages,re.M)
+    matchcount = 0 
+    index = 0 
 
-    if(matchstring):
+    if(matchstring):			
         for msg in matchstring:
             RunLog.info('Ignorable ERROR message:\n' + msg)
             matchcount += 1
-
+			
         while matchcount > 0:
             matchcount -= 1
-            messages = messages.replace(matchstring[index], '')
+            messages = messages.replace(matchstring[index],'')
             index += 1
 
         valid_list = []
@@ -60,7 +63,7 @@ def RemoveIgnorableMessages(messages, keywords):
         if len(valid_list) > 0:
             return valid_list
         else:
-            return None
+            return None             
     else:
         return messages
 

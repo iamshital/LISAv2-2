@@ -12,11 +12,11 @@
     <Parameters>
 
 .INPUTS
-
+	
 
 .NOTES
-    Creation Date:
-    Purpose/Change:
+    Creation Date:  
+    Purpose/Change: 
 
 .EXAMPLE
 
@@ -24,54 +24,50 @@
 #>
 ###############################################################################################
 
-Param
+Param 
 (
-    $OutputFilePath = "J:\Jenkins_Shared_Do_Not_Delete\userContent\common\VMSizes-ARM.txt",
-    $LogFileName = "UpdateAzureRegionAndVMSizes.log"
+    $OutputFilePath = "J:\Jenkins_Shared_Do_Not_Delete\userContent\common\VMSizes-ARM.txt"
 )
-
-Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
 try
 {
     $ExitCode = 1
     #region Update VM sizes
-    Write-LogInfo "Getting 'Microsoft.Compute' supported region list..."
+    LogMsg "Getting 'Microsoft.Compute' supported region list..."
     $allRegions = (Get-AzureRmLocation | Where-Object { $_.Providers.Contains("Microsoft.Compute")} | Sort-Object).Location
     $allRegions = $allRegions | Sort-Object
     $i = 1
-    $allRegions | ForEach-Object { Write-LogInfo "$i. $_"; $i++ }
+    $allRegions | ForEach-Object { LogMsg "$i. $_"; $i++ }
     $tab = "	"
     $RegionAndVMSize = "Region$tab`Size`n"
     foreach ( $NewRegion in $allRegions  )
     {
         $currentRegionSizes = (Get-AzureRmVMSize -Location $NewRegion).Name | Sort-Object
-        if ($currentRegionSizes)
+        if ($currentRegionSizes) 
         {
-            Write-LogInfo "Found $($currentRegionSizes.Count) sizes for $($NewRegion)..."
+            LogMsg "Found $($currentRegionSizes.Count) sizes for $($NewRegion)..."
             $CurrentSizeCount = 1
             foreach ( $size in $currentRegionSizes )
             {
-                Write-LogInfo "|--Added $NewRegion : $CurrentSizeCount. $($size)..."
+                LogMsg "|--Added $NewRegion : $CurrentSizeCount. $($size)..."
                 $RegionAndVMSize += $NewRegion + $tab + $NewRegion + " " + $size + "`n"
                 $CurrentSizeCount += 1
             }
         }
     }
     Set-Content -Value $RegionAndVMSize -Path $OutputFilePath -Force -NoNewline
-    Write-LogInfo "$OutputFilePath saved successfully."
+    LogMsg "$OutputFilePath saved successfully."
     $ExitCode = 0
     #endregion
 }
-catch
+catch 
 {
     $ExitCode = 1
-    Raise-Exception ($_)
+    ThrowException ($_)
 }
 finally
 {
-    Write-LogInfo "Exiting with code: $ExitCode"
+    LogMsg "Exiting with code: $ExitCode"
     exit $ExitCode
 }
 #endregion

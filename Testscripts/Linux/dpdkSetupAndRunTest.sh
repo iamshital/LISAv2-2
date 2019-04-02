@@ -12,92 +12,78 @@
 #############################################################################
 
 function dpdk_setup() {
-	if [ -z "${IP_ADDRS}" ]; then
-		LogErr "ERROR: IP_ADDRS must be defined in environment"
-		SetTestStateAborted
-		exit 1
-	fi
+    if [ -z "${CLIENT}" -o -z "${SERVER}" ]; then
+        LogErr "ERROR: CLIENT and SERVER must be defined in environment"
+        SetTestStateAborted
+        exit 1
+    fi
 
-	local ip
-	for ip in $IP_ADDRS; do
-		Install_Dpdk "${ip}" > "${LIS_HOME}"/dpdk_"${ip}"_install.log 2>&1 &
-		local pids="$pids $!"
-	done
-	for pid in $(echo "$pids");do
-		wait "$pid"
-	done
+    # work around for known issue of some distro's NICs not coming up with IP
+    local distro=$(detect_linux_distribution)$(detect_linux_distribution_version)
+    if [[ "${distro}" == "ubuntu18.04" || "${distro}" == "rhel7.5" ]]; then
+        LogMsg "Running dhcp for ${distro}; known issue"
+        local dhcp_cmd="dhclient eth1 eth2"
+        ssh ${SERVER} ${dhcp_cmd}
+        eval ${dhcp_cmd}
+    fi
 
-	for ip in $IP_ADDRS; do
-		Hugepage_Setup "${ip}" &
-		local pids="$pids $!"
-	done
-	for pid in $(echo "$pids");do
-		wait "$pid"
-	done
+    sleep 5
 
-	for ip in $IP_ADDRS; do
-		Modprobe_Setup "${ip}" &
-		local pids="$pids $!"
-	done
-	for pid in $(echo "$pids");do
-		wait "$pid"
-	done
-	sleep 2
+    local client_ips=($(ssh ${CLIENT} "hostname -I | awk '{print ${1}}'"))
+    local server_ips=($(ssh ${SERVER} "hostname -I | awk '{print ${1}}'"))
+
+    local server_ip1=${server_ips[1]}
+    local client_ip1=${client_ips[1]}
+
+    install_dpdk ${CLIENT} ${client_ip1} ${server_ip1} &
+    local client_install_pid=$!
+
+    install_dpdk ${SERVER} ${server_ip1} ${client_ip1}
+
+    wait ${client_install_pid}
+
+    LogMsg "Setting up Hugepages and modprobing drivers"
+    hugepage_setup ${SERVER}
+    modprobe_setup ${SERVER}
 }
 
 # Source utils.sh
 . utils.sh || {
-	echo "ERROR: unable to source utils.sh!" | tee "${HOME}"/TestExecutionError.log
-	echo "TestAborted" > "${HOME}"/state.txt
-	exit 1
+    echo "ERROR: unable to source utils.sh!" | tee ${HOME}/TestExecutionError.log
+    echo "TestAborted" > ${HOME}/state.txt
+    exit 1
 }
 
-source_script "dpdkUtils.sh"
+. dpdkUtils.sh || {
+    LogErr "ERROR: unable to source dpdkUtils.sh!"
+    SetTestStateAborted
+    exit 1
+}
 
 # Source constants file and initialize most common variables
 UtilsInit
 LOG_DIR="${LIS_HOME}/logdir"
-rm -rf "${LOG_DIR}" # LISA Pipelines don't always wipe old state
-mkdir -p "${LOG_DIR}"
-PHASE_FILE="${LIS_HOME}/phase.txt"
-> "${PHASE_FILE}"
+mkdir ${LOG_DIR}
 
 # constants.sh is now loaded; load user provided scripts
 for file in ${USER_FILES}; do
-	source_script "${LIS_HOME}/${file}"
+    source_script "${LIS_HOME}/${file}"
 done
 
 # error check here so on failure don't waste time setting up dpdk
-if ! type Run_Testcase > /dev/null; then
-	LogErr "ERROR: missing Run_Testcase function"
-	SetTestStateAborted
-	exit 1
+if ! type run_testcase > /dev/null; then
+    LogErr "ERROR: missing run_testcase function"
+    SetTestStateAborted
+    exit 1
 fi
 
 LogMsg "Starting DPDK Setup"
-# when available update to dpdk latest
-if [ -z "${DPDK_LINK}" ]; then
-	DPDK_LINK="https://fast.dpdk.org/rel/dpdk-18.08.tar.xz"
-	LogMsg "DPDK_LINK missing from environment; using ${DPDK_LINK}"
-fi
-
-# set DPDK_DIR global
-DPDK_DIR="dpdk"
-if [[ $DPDK_LINK =~ .tar ]]; then
-	DPDK_DIR="dpdk-$(echo ${DPDK_LINK} | grep -Po "(\d+\.)+\d+")"
-elif [[ $DPDK_LINK =~ ".git" ]] || [[ $DPDK_LINK =~ "git:" ]]; then
-	DPDK_DIR="${DPDK_LINK##*/}"
-fi
-
-LogMsg "DPDK source dir is: ${DPDK_DIR}"
-
 dpdk_setup
 
 LogMsg "Calling testcase provided run function"
-Run_Testcase
+run_testcase
 
-LogMsg "tar -cvzf ${LIS_HOME}/vmTestcaseLogs.tar.gz ${LOG_DIR}"
-tar -cvzf "${LIS_HOME}"/vmTestcaseLogs.tar.gz "${LOG_DIR}"
+tar -cvzf vmTestcaseLogs.tar.gz ${LOG_DIR}
 
 LogMsg "dpdkSetupAndRunTest completed!"
 SetTestStateCompleted

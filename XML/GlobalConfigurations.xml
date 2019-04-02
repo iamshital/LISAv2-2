@@ -21,16 +21,11 @@
         </TestCredentials>
     </Azure>
     <HyperV>
-        <Hosts>
-            <Host>
-                <ServerName>localhost</ServerName>
-                <DestinationOsVHDPath>VHDs_Destination_Path</DestinationOsVHDPath>
-            </Host>
-            <Host>
-                <ServerName>localhost</ServerName>
-                <DestinationOsVHDPath>VHDs_Destination_Path</DestinationOsVHDPath>
-            </Host>
-        </Hosts>
+        <Host>
+            <ServerName>localhost</ServerName>
+            <SourceOsVHDPath></SourceOsVHDPath>
+            <DestinationOsVHDPath>VHDs_Destination_Path</DestinationOsVHDPath>
+        </Host>
         <ResultsDatabase>
             <server></server>
             <user></user>
@@ -44,30 +39,4 @@
             <LinuxPassword>xxxxxxxxxxxxxxxxxxxxxxxxx</LinuxPassword>
         </TestCredentials>
     </HyperV>
-    <WSL>
-        <Hosts>
-            <Host>
-                <!--The name of the WSL host-->
-                <ServerName>localhost</ServerName>
-                <!--The destination path to extract the distro package on the WSL host-->
-                <DestinationOsVHDPath></DestinationOsVHDPath>
-            </Host>
-            <Host>
-                <ServerName>localhost</ServerName>
-                <DestinationOsVHDPath></DestinationOsVHDPath>
-            </Host>
-        </Hosts>
-        <ResultsDatabase>
-            <server></server>
-            <user></user>
-            <password></password>
-            <dbname></dbname>
-            <dbtable></dbtable>
-            <testTag></testTag>
-        </ResultsDatabase>
-        <TestCredentials>
-            <LinuxUsername>YOUR_USERNAME</LinuxUsername>
-            <LinuxPassword>xxxxxxxxxxxxxxxxxxxxxxxxx</LinuxPassword>
-        </TestCredentials>
-    </WSL>
 </Global>

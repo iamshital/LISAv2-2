@@ -4,9 +4,9 @@
 # Licensed under the Apache License.
 <#
 .SYNOPSIS
-    Update test parameters for nested vm test case
+    Update test parameters for nested kvm test case
 
-.PARAMETER
+.PARAMETER 
     <Parameters>
 
 .INPUTS
@@ -21,12 +21,11 @@
 ###############################################################################################
 
 param(
-	[string]$TestName = "",
-	[string]$NestedImageUrl = "",
-	[string]$NestedUser = "",
-	[string]$NestedUserPassword = "",
-	[string]$RaidOption = "",
-	[string]$setupType = ""
+    [string]$TestName= "",
+    [string]$NestedImageUrl= "",
+    [string]$NestedUser= "",
+    [string]$NestedUserPassword= "",
+    [string]$RaidOption= ""
 )
 
 $TestXMLs = Get-ChildItem -Path ".\XML\TestCases\*.xml"
@@ -35,7 +34,7 @@ foreach ( $file in $TestXMLs.FullName)
 	$TestXmlConfig = [xml]( Get-Content -Path $file)
 	foreach ( $test in $TestXmlConfig.TestCases.test )
 	{
-		if ( $test.Tags.ToString().Contains("nested") -and ( $TestName.Split(',').contains($($test.TestName)) ) )
+		if ( $test.Area -eq 'Nested' -and $TestName.Split(',').contains($($test.TestName)) )
 		{
 			Write-Host "Update test parameters for case $($test.TestName)"
 			foreach ($param in $test.TestParameters.ChildNodes)
@@ -56,11 +55,6 @@ foreach ( $file in $TestXMLs.FullName)
 				{
 					$param."#text" = "RaidOption='$RaidOption'"
 				}
-			}
-			if ($setupType)
-			{
-				Write-Host "Update test setup type: $setupType"
-				$test.setupType = $setupType
 			}
 		}
 	}

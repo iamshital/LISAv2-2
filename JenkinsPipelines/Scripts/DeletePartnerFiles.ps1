@@ -12,11 +12,11 @@
 	<Parameters>
 
 .INPUTS
-
+	
 
 .NOTES
-    Creation Date:
-    Purpose/Change:
+    Creation Date:  
+    Purpose/Change: 
 
 .EXAMPLE
 
@@ -24,17 +24,13 @@
 #>
 ###############################################################################################
 
-param
+param 
 (
     $JenkinsUser,
-    $fileNames,
     $RemoteReceivedFolder = "J:\ReceivedFiles",
-    $LogFileName = "DeletePartnerFiles.log"
+    $fileNames
 )
-
-Set-Variable -Name LogFileName -Value $LogFileName -Scope Global -Force
-
-Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global -DisableNameChecking }
+Get-ChildItem .\Libraries -Recurse | Where-Object { $_.FullName.EndsWith(".psm1") } | ForEach-Object { Import-Module $_.FullName -Force -Global }
 
 try
 {
@@ -46,55 +42,55 @@ try
             $allFiles = Get-ChildItem "$folderToQuery"
             foreach ( $file in $allFiles.Name)
             {
-                Write-LogInfo "Removing $file..."
-                $null = Remove-Item -Path "$folderToQuery\$file" -Force
+                LogMsg "Removing $file..." -NoNewline
+                $out = Remove-Item -Path "$folderToQuery\$file" -Force
                 if ($?)
                 {
-                    Write-LogInfo " SUCCESS"
+                    LogMsg " SUCCESS"
                 }
-                else
+                else 
                 {
-                    Write-LogInfo " Error"
-                }
+                    LogMsg " Error"    
+                }            
             }
         }
-        else
+        else 
         {
             foreach ($file in $fileNames.split(","))
             {
                 if ( ( Test-Path -Path "$folderToQuery\$file"))
                 {
-                    Write-LogInfo "Removing $file..."
-                    $null = Remove-Item -Path "$folderToQuery\$file" -Force
+                    LogMsg "Removing $file..." -NoNewline
+                    $out = Remove-Item -Path "$folderToQuery\$file" -Force
                     if ($?)
                     {
-                        Write-LogInfo " SUCCESS"
+                        LogMsg " SUCCESS"
                     }
-                    else
+                    else 
                     {
-                        Write-LogInfo " Error"
+                        LogMsg " Error"    
                     }
                 }
-                else
+                else 
                 {
-                    Write-LogInfo "$folderToQuery\$file does not exist."
+                    LogMsg "$folderToQuery\$file does not exeists."
                 }
-            }
+            }        
         }
     }
-    else
+    else 
     {
-        Write-LogInfo "Please select at least one file."
+        LogMsg "Please select at leat one file."    
     }
-    $ExitCode = 0
+    $ExitCode = 0   
 }
-catch
+catch 
 {
     $ExitCode = 1
-    Raise-Exception($_)
+    ThrowExcpetion($_)
 }
 finally
 {
-    Write-LogInfo "Exiting with ExitCode = $ExitCode"
-    exit $ExitCode
+    LogMsg "Exiting with ExitCode = $ExitCode"
+    exit $ExitCode 
 }

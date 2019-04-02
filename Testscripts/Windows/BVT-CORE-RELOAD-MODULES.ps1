@@ -22,64 +22,62 @@
 #########################################################################
 # Check test result
 ########################################################################
-param([String] $TestParams,
-      [object] $AllVmData,
-      [object] $CurrentTestData)
-
 function Check-Result {
     param (
         [String] $VmIp,
-        [String] $VMPort,
+        [String] $VmPort,
         [String] $User,
         [String] $Password
     )
 
     $retVal = $False
-    $testRunning = "TestRunning"
+    $stateFile = "${LogDir}\state.txt"
     $testCompleted = "TestCompleted"
     $testAborted = "TestAborted"
     $testFailed = "TestFailed"
-    $testSkipped = "TestSkipped"
-    $attempts = 1
+    $attempts = 200
 
-    $timeout = New-Timespan -Minutes 180
-    $sw = [diagnostics.stopwatch]::StartNew()
-    while ($sw.elapsed -lt $timeout){
-        Start-Sleep -s 20
-        Write-LogInfo "Test is running. Attempt number ${attempts} to reach VM"
-        $attempts++
-        $state = Run-LinuxCmd -ip $VmIp -port $VMPort -username $User -password $Password "cat state.txt" -ignoreLinuxExitCode:$true
-        if (-not $state) {
-            if ($TestPlatform -eq "HyperV" -and (Get-VMIntegrationService $VMName -ComputerName $HvServer | `
-                ?{$_.name -eq "Heartbeat"}).PrimaryStatusDescription `
-                -match "No Contact|Lost Communication") {
-
-                Stop-VM -Name $VMName -ComputerName $HvServer -Force -TurnOff
-                Write-LogErr "Lost Communication or No Contact to VM!"
-                break
-            } else {
-                Write-LogInfo "Current VM is inaccessible, please wait for a while."
+    while ($attempts -ne 0 ){
+        RemoteCopy -download -downloadFrom $VmIp -files "/home/${User}/state.txt" -downloadTo $LogDir -port $VmPort -username "root" -password $Password
+        $sts = $?
+            if (Test-Path $stateFile){
+                $contents = Get-Content -Path $stateFile
+                if ($null -ne $contents){
+                    if ($contents -eq $testCompleted) {
+                        LogMsg "Info: state file contains TestCompleted"
+                        $retVal = $True
+                        break
+                    }
+                    if (($contents -eq $testAborted) -or ($contents -eq $testFailed)) {
+                        LogErr "Info: State file contains TestAborted or TestFailed"
+                        break
+                    }
+                }
+                else {
+                    LogMsg "Warning: state file is empty!"
+                    break
+                }
             }
-        } else {
-            if ($state -eq $testRunning){
-                Write-LogInfo "Test is still running!"
-            } elseif (($state -eq $testCompleted) -or ($state -eq $testSkipped)) {
-                Write-LogInfo "state file contains ${state}"
-                $retVal = $True
-                break
-            } elseif (($state -eq $testAborted) -or ($state -eq $testFailed)) {
-                Write-LogErr "state file contains ${state}"
-                break
+        
+        else {
+            Start-Sleep -s 10
+            $attempts--
+            LogMsg "Info : Attempt number ${attempts}"
+            LogMsg "LogDir: ${LogDir}"
+            LogMsg "StateFile: ${stateFile}"
+            if ($attempts -eq 0) {
+                LogErr "Error : Reached max number of attempts to extract state file"
             }
         }
+
+        if (Test-Path $stateFile) {
+            Remove-Item $stateFile
+        }
     }
-    if ($sw.elapsed -ge $timeout) {
-        Write-LogErr "Test has timed out. After 3 hours, state file couldn't be read!"
-    }
-    Collect-TestLogs -LogsDestination $LogDir -ScriptName `
-        $CurrentTestData.files.Split('\')[3].Split('.')[0] -TestType "sh" -PublicIP `
-        $VmIp -SSHPort $VMPort -Username $User -password $Password -TestName `
-        $CurrentTestData.testName | Out-Null
+
+    if (Test-Path $stateFile) {
+        Remove-Item $stateFile
+    } 
     return $retVal
 }
 
@@ -87,29 +85,43 @@ function Check-Result {
 # Main script body
 #######################################################################
 function Main {
-    param (
-        $Ipv4,
-        $VMPort,
-        $VMUserName,
-        $VMPassword,
-        $RootDir
-    )
+    $currentTestResult = CreateTestResultObject
+    $resultArr = @()
     $testScript = "BVT-CORE-RELOAD-MODULES.sh"
+    $ipv4 = $AllVMData.PublicIP
+    $vmPort = $AllVMData.SSHPort
+
+    LogMsg "This script covers test case: ${TC_COVERED}"
+
+    # Start pinging the VM while the netvsc driver is being stress reloaded
+    $pingJob = Start-Job -ScriptBlock { param($ipv4) ping -t $ipv4 } -ArgumentList ($ipv4)
+    if (-not $?) {
+        LogErr "Error: Unable to start job for pinging the VM while stress reloading the netvsc driver."
+        $testResult = "FAIL"
+        $resultArr += $testResult
+        $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+        return $currentTestResult.TestResult 
+    }
 
     # Run test script in background
-    Run-LinuxCmd -username $VMUserName -password $VMPassword -ip $Ipv4 -port $VMPort `
-        -command "echo '${VMPassword}' | sudo -S -s eval `"export HOME=``pwd``;bash ${testScript} > BVT-CORE-RELOAD-MODULES_summary.log`"" -RunInBackGround | Out-Null
+    RunLinuxCmd -username $user -password $password -ip $ipv4 -port $vmPort -command "echo '${password}' | sudo -S -s eval `"export HOME=``pwd``;bash ${testScript} > BVT-CORE-RELOAD-MODULES_summary.log`"" -RunInBackGround
 
-    $sts = Check-Result -VmIp $Ipv4 -VmPort $VMPort -User $VMUserName -Password $VMPassword
+    Stop-Job $pingJob
+
+    $sts = Check-Result -VmIp $ipv4 -VmPort $vmPort -User $user -Password $password
     if (-not $($sts[-1])) {
-        Write-LogErr "Something went wrong during execution of BVT-CORE-RELOAD-MODULES.sh script!"
-        return "FAIL"
+        LogErr "Error: Something went wrong during execution of BVT-CORE-RELOAD-MODULES.sh script!" 
+        $testResult = "FAIL"
+        $resultArr += $testResult
+        $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+        return $currentTestResult.TestResult 
     } else {
-        Write-LogInfo "Test Stress Reload Modules has passed"
-        return "PASS"
+        LogMsg "Info : Test Stress Reload Modules ${results} "
+        $testResult = "PASS"
+        $resultArr += $testResult
+        $currentTestResult.TestResult = GetFinalResultHeader -resultarr $resultArr
+        return $currentTestResult.TestResult
     }
 }
 
-Main -VMName $AllVMData.RoleName -hvServer $TestLocation `
-         -ipv4 $AllVMData.PublicIP -VMPort $AllVMData.SSHPort `
-         -VMUserName $user -VMPassword $password -RootDir $WorkingDirectory
+Main
