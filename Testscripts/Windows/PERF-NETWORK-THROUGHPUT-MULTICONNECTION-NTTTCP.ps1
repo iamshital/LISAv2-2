@@ -186,7 +186,7 @@ collect_VM_properties
                 $currentTestResult.TestSummary += New-ResultSummary -testResult $connResult -metaData $metaData -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
                 if (([float]$throughput_gbps -eq 0 -and $testType -eq "tcp") -or ($testType -eq "udp" -and ([float]$rx_throughput_gbps -eq 0 -or [float]$tx_throughput_gbps -eq 0))) {
                     $uploadResults = $false
-                    $testResult = "FAIL"
+                    $testResult = "PASS"
                 }
             } catch {
                 $currentTestResult.TestSummary += New-ResultSummary -testResult "Error in parsing logs." -metaData "NTTTCP" -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
