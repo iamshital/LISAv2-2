@@ -339,7 +339,7 @@ function Is-VmAlive {
     #>
     param(
         $AllVMDataObject,
-        $MaxRetryCount = 50
+        $MaxRetryCount = 5
     )
 
     Write-LogInfo "Trying to connect to deployed VMs."

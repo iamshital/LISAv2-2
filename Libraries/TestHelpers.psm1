@@ -65,7 +65,7 @@ function Create-TestResultObject()
 function Upload-RemoteFile($uploadTo, $port, $file, $username, $password, $usePrivateKey, $maxRetry) {
 	$retry=1
 	if (!$maxRetry) {
-		$maxRetry = 10
+		$maxRetry = 3
 	}
 
 	while($retry -le $maxRetry)
@@ -117,7 +117,7 @@ function Upload-RemoteFile($uploadTo, $port, $file, $username, $password, $usePr
 		if (($returnCode -ne 0) -and ($retry -ne $maxRetry))
 		{
 			Write-LogWarn "Error in upload, attempt $retry, retrying"
-			Wait-Time -seconds 10
+			Wait-Time -seconds 1
 		}
 		elseif (($returnCode -ne 0) -and ($retry -eq $maxRetry))
 		{
