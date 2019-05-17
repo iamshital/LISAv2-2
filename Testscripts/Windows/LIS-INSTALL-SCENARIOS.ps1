@@ -160,7 +160,9 @@ Function Uninstall-LIS ( $LISTarballUrlCurrent, $allVMData , $TestProvider) {
             return $true
         }
         else {
-            if ($UninstallLISConsoleOutput -imatch "error" -or $UninstallLISConsoleOutput -imatch "warning" -or $UninstallLISConsoleOutput -imatch "abort") {
+            if ($UninstallLISConsoleOutput -imatch "error" -or `
+                ($UninstallLISConsoleOutput -imatch "warning" -and $UninstallLISConsoleOutput -inotmatch "hyperv.conf.rpmsave")`
+                -or $UninstallLISConsoleOutput -imatch "abort") {
                 Write-LogErr "Latest LIS install is failed due to found errors or warnings or aborted."
                 return $false
             }
