@@ -69,7 +69,7 @@ isLISInstalled=$(rpm -qa | grep hyper-v 2>/dev/null)
 
 if [ ! -z "$isLISInstalled" ]; then
     expected_lis_version=$(dmesg | grep 'Vmbus LIS version' | awk -F ':' '{print $3}' | tr -d [:blank:])
-    if [[ $DISTRO_VERSION =~ 7\. ]]; then
+    if version_ge $DISTRO_VERSION "7.3" ; then
         HYPERV_MODULES+=('pci_hyperv')
         pci_module=$(lsmod | grep pci_hyperv)
         if [ -z $pci_module ]; then

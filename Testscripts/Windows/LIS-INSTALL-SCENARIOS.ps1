@@ -8,6 +8,10 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+$IgnorableWarning = (
+    "warning: /etc/depmod.d/hyperv.conf saved as /etc/depmod.d/hyperv.conf.rpmsave"
+)
+
 Function Check-modules() {
     Write-LogInfo "Check if module are loaded after LIS installation"
     $remoteScript = "LIS-MODULES-CHECK.py"
@@ -72,7 +76,7 @@ Function Upgrade-LIS ($LISTarballUrlOld, $LISTarballUrlCurrent, $allVMData , $Te
             return $true
         }
         else {
-            if ($UpgradelLISConsoleOutput -imatch "error" -or $UpgradelLISConsoleOutput -imatch "warning" -or $UpgradelLISConsoleOutput -imatch "abort") {
+            if ($UpgradelLISConsoleOutput -imatch "error" -or ($UpgradelLISConsoleOutput -imatch "warning" -and ($null -eq ($IgnorableWarning | ? {$UpgradelLISConsoleOutput -match $_ }))) -or $UpgradelLISConsoleOutput -imatch "abort") {
                 Write-LogErr "Latest LIS install is failed due found errors or warnings or aborted."
                 return $false
             }
@@ -160,7 +164,7 @@ Function Uninstall-LIS ( $LISTarballUrlCurrent, $allVMData , $TestProvider) {
             return $true
         }
         else {
-            if ($UninstallLISConsoleOutput -imatch "error" -or $UninstallLISConsoleOutput -imatch "warning" -or $UninstallLISConsoleOutput -imatch "abort") {
+            if ($UninstallLISConsoleOutput -imatch "error" -or ($UninstallLISConsoleOutput -imatch "warning" -and ($null -eq ($IgnorableWarning | ? {$UninstallLISConsoleOutput -match $_ }))) -or $UninstallLISConsoleOutput -imatch "abort") {
                 Write-LogErr "Latest LIS install is failed due to found errors or warnings or aborted."
                 return $false
             }

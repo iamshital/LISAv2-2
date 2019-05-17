@@ -36,7 +36,7 @@ def RunTest(command):
     [current_distro, distro_version] = DetectDistro()
     lis_exists=Run("rpm -qa | grep hyper-v 2>/dev/null")
 
-    if distro_version.startswith("7") and lis_exists:
+    if LooseVersion(distro_version) >= LooseVersion('7.3') and lis_exists:
         hvModules.append("pci_hyperv")
         output = Run(command)
         if not ("pci_hyperv" in output):
