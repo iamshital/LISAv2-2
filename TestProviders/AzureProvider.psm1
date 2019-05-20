@@ -142,10 +142,12 @@ Class AzureProvider : TestProvider
 						$null = Remove-Job -Id $restartJob.ID -Force -ErrorAction SilentlyContinue
 						$TimedOutResourceGroup = $restartJob.Name.Replace("Restart-",'').Split(':')[0]
 						$TimedOutRoleName = $restartJob.Name.Replace("Restart-",'').Split(':')[1]
-						$restartJob = Start-RestartAzureVMJob -ResourceGroupName $TimedOutResourceGroup -RoleName $TimedOutRoleName
+						$TimedOutVM = $AllVMData | Where-Object {$_.ResourceGroupName -eq $TimedOutResourceGroup -and $_.RoleName -eq $TimedOutRoleName}
+						$Null = Restart-VMFromShell -VMData $TimedOutVM -SkipRestartCheck
+					} else {
+						$tempJobs += $restartJob
+						$recheckAgain = $true
 					}
-					$tempJobs += $restartJob
-					$recheckAgain = $true
 				}
 			}
 			if ((Get-Date) -gt $Timeout ) {
