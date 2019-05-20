@@ -722,7 +722,11 @@ function Install-CustomLIS ($CustomLIS, $customLISBranch, $allVMData, [switch]$R
 						Write-LogInfo "Old LIS: $currentlisVersion"
 						Write-LogInfo "New LIS: $upgradedlisVersion"
 						Add-Content -Value "Old LIS: $currentlisVersion" -Path ".\Report\AdditionalInfo-$TestID.html" -Force
-						Add-Content -Value "New LIS: $upgradedlisVersion" -Path ".\Report\AdditionalInfo-$TestID.html" -Force
+                        Add-Content -Value "New LIS: $upgradedlisVersion" -Path ".\Report\AdditionalInfo-$TestID.html" -Force
+                        if ($upgradedlisVersion -eq $currentlisVersion) {
+                            Write-LogErr "LIS Version is not changed."
+                            return $false
+                        }
 						return $true
 					}
 					else
