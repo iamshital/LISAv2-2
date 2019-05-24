@@ -722,11 +722,11 @@ function Install-CustomLIS ($CustomLIS, $customLISBranch, $allVMData, [switch]$R
 						Write-LogInfo "Old LIS: $currentlisVersion"
 						Write-LogInfo "New LIS: $upgradedlisVersion"
 						Add-Content -Value "Old LIS: $currentlisVersion" -Path ".\Report\AdditionalInfo-$TestID.html" -Force
-                        Add-Content -Value "New LIS: $upgradedlisVersion" -Path ".\Report\AdditionalInfo-$TestID.html" -Force
-                        if ($upgradedlisVersion -eq $currentlisVersion) {
-                            Write-LogErr "LIS Version is not changed."
-                            return $false
-                        }
+						Add-Content -Value "New LIS: $upgradedlisVersion" -Path ".\Report\AdditionalInfo-$TestID.html" -Force
+						if ($upgradedlisVersion -eq $currentlisVersion) {
+							Write-LogErr "LIS Version is not changed even after successful LIS RPMs installation."
+							return $false
+						}
 						return $true
 					}
 					else
@@ -1133,7 +1133,7 @@ function Check-FileInLinuxGuest {
    #>
 
 	$check = Run-LinuxCmd -username $vmUserName -password $vmPassword -port $vmPort -ip $ipv4 -command "[ -f ${fileName} ] && echo 1 || echo 0"
-	if (-not $check) {
+	if (-not [convert]::ToInt32($check)) {
 		Write-Loginfo "File $fileName does not exists"
 		return $False
 	}

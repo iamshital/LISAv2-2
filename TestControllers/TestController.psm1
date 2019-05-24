@@ -286,7 +286,7 @@ Class TestController
 			if ($test.setupType) {
 				$key = "$($test.setupType),$($test.OverrideVMSize),$($test.AdditionalHWConfig.Networking),$($test.AdditionalHWConfig.DiskType)," +
 					"$($test.AdditionalHWConfig.OSDiskType),$($test.AdditionalHWConfig.SwitchName),$($test.AdditionalHWConfig.ImageType)," +
-					"$($test.AdditionalHWConfig.OSType)"
+					"$($test.AdditionalHWConfig.OSType),$($test.AdditionalHWConfig.StorageAccountType)"
 				if ($this.SetupTypeToTestCases.ContainsKey($key)) {
 					$this.SetupTypeToTestCases[$key] += $test
 				} else {
@@ -341,7 +341,7 @@ Class TestController
 		}
 		if ($CurrentTestData.files -imatch ".py") {
 			$pythonPath = Run-LinuxCmd -Username $Username -password $Password -ip $VMData.PublicIP -Port $VMData.SSHPort `
-				-Command "which python || which python2 || which python3 || (which /usr/libexec/platform-python && ln -s /usr/libexec/platform-python /sbin/python)" -runAsSudo
+				-Command "which python 2> /dev/null || which python2 2> /dev/null || which python3 2> /dev/null || (which /usr/libexec/platform-python && ln -s /usr/libexec/platform-python /sbin/python)" -runAsSudo
 			if (!$pythonPath.Contains("platform-python") -and (($pythonPath -imatch "python2") -or ($pythonPath -imatch "python3"))) {
 				$pythonPathSymlink  = $pythonPath.Substring(0, $pythonPath.LastIndexOf("/") + 1)
 				$pythonPathSymlink  += "python"
