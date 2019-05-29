@@ -115,7 +115,7 @@ RunTest() {
 	echo "divya $distro_version"
 	distro_version=$(echo $distro_version | tr -d .)
 	echo "jyothi $distro_version"
-	extraspace=10485760
+	extraspace=1048576
 	MIN_SPACE_FOR_RAMFS_CREATION=157286400
 
 	lib_module_folder="/lib/modules"
@@ -136,7 +136,7 @@ RunTest() {
 	echo "boot_part_avail_space $boot_part_avail_space"
 	lib_module_required_space=$(rpm --queryformat='%{SIZE}' -qp  LISISO/${distro_package_name}${distro_version}/kmod-microsoft-hyper*x86_64.rpm)
 	ramdisk_required_space=$(stat /boot/initramfs-$(uname -r).img --format="%s")
-	boot_part_required_space=$(expr $ramdisk_required_space + $extraspace)
+	boot_part_required_space=$(expr $ramdisk_required_space)
 	root_part_required_space=$(expr $MIN_SPACE_FOR_RAMFS_CREATION + $ramdisk_size_factor \* $ramdisk_required_space + $lib_module_required_space + $extraspace)
 	echo "lib_module_required_space $lib_module_required_space"
 	echo "ramdisk_required_space $ramdisk_required_space"
