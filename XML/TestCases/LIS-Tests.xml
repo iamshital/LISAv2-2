@@ -13,6 +13,7 @@
     <test>
         <testName>LIS-PREINSTALL-DISK-SIZE-VERIFICATION</testName>
         <setupScript>.\TestScripts\Windows\LIS-Mount-CD.ps1</setupScript>
+        <Timeout>1800</Timeout>
         <testScript>Test_LIS_disk_check.sh</testScript>
         <files>.\Testscripts\Linux\Test_LIS_disk_check.sh,.\Testscripts\Linux\check_traces.sh,.\Testscripts\Linux\utils.sh</files>
         <setupType>OneVM</setupType>
