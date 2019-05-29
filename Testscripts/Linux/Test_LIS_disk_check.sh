@@ -61,6 +61,7 @@ Install_Uninstall_LIS() {
 		total_hyperv_packages=$(rpm -qa | grep "hyper-v" | wc -l)
 		if [ $total_hyperv_packages -gt 0 ]; then
 			LogMsg "Found $total_hyperv_packages hyper-v packages installed"
+			cleanup
 			LogMsg "Now removing LIS..."
 			./uninstall.sh
 			total_hyperv_packages=$(rpm -qa | grep "hyper-v" | wc -l)
@@ -107,62 +108,84 @@ cleanup(){
 }
 
 RunTest() {
+	distro_package_name=RPMS
+	echo "distro_package_name $distro_package_name"
 	test_type=$1
-	distro=$(detect_linux_distribution)
 	distro_version=$(detect_linux_distribution_version)
+	echo "divya $distro_version"
+	distro_version=$(echo $distro_version | tr -d .)
+	echo "jyothi $distro_version"
+	extraspace=10485760
+	MIN_SPACE_FOR_RAMFS_CREATION=157286400
 
-	if [[ "$distro_version" =~ "7.3" || "$distro_version" =~ "7.4" ]]; then
-		modules_safe_data_size=150
+	lib_module_folder="/lib/modules"
+	boot_folder="/boot"
+
+	root_partition=$(df -P $lib_module_folder | grep -v Used | awk '{ print $1}')
+	echo "root_partition $root_partition"
+	boot_partition=$(df -P $boot_folder | grep -v Used | awk '{ print $1}')
+	echo "boot_partition $boot_partition"
+
+	ramdisk_size_factor=1
+	[ $root_partition != $boot_partition ] && ramdisk_size_factor=2
+	echo "ramdisk_size_factor $ramdisk_size_factor"
+
+	root_part_avail_space=$(($(stat -f --format="%a*%S" $lib_module_folder)))
+	echo "root_part_avail_space $root_part_avail_space"
+	boot_part_avail_space=$(($(stat -f --format="%a*%S" $boot_folder)))
+	echo "boot_part_avail_space $boot_part_avail_space"
+	lib_module_required_space=$(rpm --queryformat='%{SIZE}' -qp  LISISO/${distro_package_name}${distro_version}/kmod-microsoft-hyper*x86_64.rpm)
+	ramdisk_required_space=$(stat /boot/initramfs-$(uname -r).img --format="%s")
+	boot_part_required_space=$(expr $ramdisk_required_space + $extraspace)
+	root_part_required_space=$(expr $MIN_SPACE_FOR_RAMFS_CREATION + $ramdisk_size_factor \* $ramdisk_required_space + $lib_module_required_space + $extraspace)
+	echo "lib_module_required_space $lib_module_required_space"
+	echo "ramdisk_required_space $ramdisk_required_space"
+
+	if [[ $test_type == "positive" ]]; then
+
+		echo "boot_part_required_space $boot_part_required_space"
+		echo "root_part_required_space $root_part_required_space"
 	else
-		modules_safe_data_size=70
-	fi
-	boot_safe_data_size=50
-	if [[ $test_type == "negative" ]]; then
-		modules_safe_data_size=50
-		boot_safe_data_size=20
+		boot_part_required_space=$(expr $boot_part_required_space / 2)
+		root_part_required_space=$(expr $root_part_required_space / 2)
+		echo "negative: root_part_required_space : $root_part_required_space"
+		echo "negative: boot_part_required_space: $boot_part_required_space"
 	fi
 
-	LogMsg "modules_safe_data_size: $modules_safe_data_size"
-	LogMsg "boot_safe_data_size: $boot_safe_data_size"
-	boot_partition=$(df -hm /lib/modules | awk '{print $1}' | tail -1)
-	modules_partition=$(df -hm /boot | awk '{print $1}' | tail -1)
-	#Check if the disk space is in positive category
-	modules_directory_size=$(df -hm /lib/modules | awk '{print $4}'  | tail -1)
-	modules_directory_target_size=$(expr $modules_directory_size - $modules_safe_data_size)
-	boot_directory_size=$(df -hm /boot | awk '{print $4}'  | tail -1)
-	if [[ $boot_partition == $modules_partition ]]; then
-		LogMsg "boot and modules share the same partition. We will create only one file"
-		single_partition_file_size=$(expr $modules_directory_size - $modules_safe_data_size - $boot_safe_data_size)
+	if [[ $boot_partition == $root_partition ]]; then
+		LogMsg "boot and root share the same partition. We will create only one file"
+		single_partition_file_size=$(expr $root_part_avail_space - $root_part_required_space)
+		echo "single_partition_file_size $single_partition_file_size"
+		CreateFile "${single_partition_file_size}" /lib/modules/file.out
+		singe_partition_created_file_size=$(ls -l /lib/modules/file.out | awk '{print $5}'  | tail -1)
+		echo "singe_partition_created_file_size $singe_partition_created_file_size"
+		LogMsg "singe_partition_created_file_size : $singe_partition_created_file_size"
+		if [[ "$singe_partition_created_file_size" == "${single_partition_file_size}" ]]; then
+			file_status="created"
+		else
+			file_status="failed"
+		fi
 	else
 		LogMsg "boot and modules do not share the same partition."
-		boot_directory_target_size=$(expr $boot_directory_size - $boot_safe_data_size)
+		single_partition_file_size=$(expr $root_part_avail_space - $root_part_required_space)
+		single_partition_file_size_boot=$(expr $boot_part_avail_space - $boot_part_required_space)
+		echo "single_partition_file_size $single_partition_file_size"
+		echo "single_partition_file_size_boot $single_partition_file_size_boot"
+		CreateFile "${single_partition_file_size}" /lib/modules/file.out
+		singe_partition_created_file_size=$(ls -l /lib/modules/file.out | awk '{print $5}'  | tail -1)
+		CreateFile "${single_partition_file_size_boot}" /boot/file.out
+		boot_created_file_size=$(ls -l /boot/file.out | awk '{print $5}'  | tail -1)
+		if [[ "$single_partition_file_size" == "${singe_partition_created_file_size}"
+			&& "$single_partition_file_size_boot" == "${boot_created_file_size}" ]]; then
+			file_status="created"
+		else
+			file_status="failed"
+		fi
 	fi
+	echo ------------------------
+	stat -f  /
+	echo ------------------------
 
-	LogMsg "modules_directory_size: $modules_directory_size"
-	LogMsg "modules_directory_target_size: $modules_directory_target_size"
-	LogMsg "boot_directory_size : $boot_directory_size"
-	LogMsg "boot_directory_target_size: $boot_directory_target_size"
-	if [ $single_partition_file_size -gt 0 ]; then
-		CreateFile "${single_partition_file_size}M" /lib/modules/file.out
-		singe_partition_created_file_size=$(ls -l --block-size=M /lib/modules/file.out | awk '{print $5}'  | tail -1)
-		LogMsg "singe_partition_created_file_size : $singe_partition_created_file_size"
-		if [[ "$singe_partition_created_file_size" == "${single_partition_file_size}M" ]]; then
-			file_status="created"
-		else
-			file_status="failed"
-		fi
-	else
-		CreateFile "${modules_directory_target_size}M" /lib/modules/file.out
-		module_created_file_size=$(ls -l --block-size=M /lib/modules/file.out | awk '{print $5}'  | tail -1)
-		CreateFile "${boot_directory_target_size}M" /boot/file.out
-		boot_created_file_size=$(ls -l --block-size=M /boot/file.out | awk '{print $5}'  | tail -1)
-		if [[ "$module_created_file_size" == "${modules_directory_target_size}M"
-			&& "$boot_created_file_size" == "${boot_directory_target_size}M" ]]; then
-			file_status="created"
-		else
-			file_status="failed"
-		fi
-	fi
 	usage=$(df -hm)
 	LogMsg "$usage"
 	LogMsg "$file_status"
