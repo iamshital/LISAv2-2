@@ -5,6 +5,9 @@
 from azuremodules import *
 from distutils.version import LooseVersion
 
+min_supported_distro_version="7.3"
+min_supported_LIS_version="4.3.0"
+
 
 min_supported_distro_version="7.3"
 min_supported_LIS_version="4.3.0"

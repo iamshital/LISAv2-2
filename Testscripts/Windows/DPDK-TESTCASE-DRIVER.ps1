@@ -150,15 +150,13 @@ function Main {
 			$ipAddrs = "$ipAddrs $internalIp"
 			Add-Content -Value "$roleName=$internalIp" -Path $constantsFile
 
-			$detectedDistro = Detect-LinuxDistro -VIP $vmData.PublicIP -SSHport $vmData.SSHPort `
-					-testVMUser $user -testVMPassword $password
 			$currentKernelVersion = Run-LinuxCmd -ip $vmData.PublicIP -port $vmData.SSHPort `
 					-username $user -password $password -command "uname -r"
-			if (IsGreaterKernelVersion -actualKernelVersion $currentKernelVersion -detectedDistro $detectedDistro) {
-					Write-LogInfo "Confirmed Kernel version supported: $currentKernelVersion"
+			if (Is-DpdkCompatible -KernelVersion $currentKernelVersion -DetectedDistro $global:DetectedDistro) {
+				Write-LogInfo "Confirmed Kernel version supported: $currentKernelVersion"
 			} else {
-				Write-LogErr "Unsupported Kernel version: $currentKernelVersion"
-				throw "Unsupported Kernel version: $currentKernelVersion"
+				Write-LogWarn "Unsupported Kernel version: $currentKernelVersion or unsupported distro $($global:DetectedDistro)"
+				return $global:ResultSkipped
 			}
 		}
 
@@ -245,8 +243,11 @@ collect_VM_properties
 			++$outputCounter
 			Wait-Time -seconds 5
 		}
-		$finalState = Run-LinuxCmd -ip $masterVM.PublicIP -port $masterVM.SSHPort -username $superUser -password $password -command "cat /root/state.txt"
-		Copy-RemoteFiles -downloadFrom $masterVM.PublicIP -port $masterVM.SSHPort -username $superUser -password $password -download -downloadTo $LogDir -files "*.csv, *.txt, *.log"
+		$finalState = Run-LinuxCmd -ip $masterVM.PublicIP -port $masterVM.SSHPort `
+			-username $superUser -password $password -command "cat /root/state.txt"
+		Copy-RemoteFiles -downloadFrom $masterVM.PublicIP -port $masterVM.SSHPort `
+			-username $superUser -password $password -download -downloadTo $LogDir `
+			-files "*.csv, *.txt, *.log, logdir/*.log"
 
 		$testDataCsv = Import-Csv -Path "${LogDir}\dpdk_test.csv"
 		if (!$testDataCsv) {
@@ -265,7 +266,6 @@ collect_VM_properties
 		elseif ($finalState -imatch "TestCompleted") {
 			Write-LogInfo "Test Completed."
 			Copy-RemoteFiles -downloadFrom $masterVM.PublicIP -port $masterVM.SSHPort -username $superUser -password $password -download -downloadTo $LogDir -files "*.tar.gz"
-			$testResult = "PASS"
 			$testResult = (Get-FunctionAndInvoke("Confirm-Performance"))
 		}
 		elseif ($finalState -imatch "TestRunning") {
