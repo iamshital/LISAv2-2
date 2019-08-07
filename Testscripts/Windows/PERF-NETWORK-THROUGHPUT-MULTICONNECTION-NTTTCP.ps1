@@ -222,6 +222,7 @@ collect_VM_properties
             if (!$TestCaseName) {
                 $TestCaseName = $CurrentTestData.testName
             }
+            $MaxThroughput = 0
             Write-LogInfo "Generating the performance data for database insertion"
             for ($i = 1; $i -lt $LogContents.Count; $i++) {
                 $Line = $LogContents[$i].Trim() -split '\s+'
@@ -246,6 +247,9 @@ collect_VM_properties
                     $resultMap["DatagramLoss"] = $($Line[3])
                 } else {
                     $resultMap["Throughput_Gbps"] = $($Line[1])
+                    if ( $MaxThroughput -lt $($Line[1]) ) {
+                        $MaxThroughput = $($Line[1])
+                    }
                     $resultMap["Latency_ms"] = $($Line[3])
                     $resultMap["TXpackets"] = $($Line[4])
                     $resultMap["RXpackets"] = $($Line[5])
@@ -257,6 +261,12 @@ collect_VM_properties
                 }
                 $currentTestResult.TestResultData += $resultMap
             }
+        }
+        Write-LogInfo "Max throughput = $MaxThroughput Gbps"
+        if ($MaxThroughput -lt 10) {
+            $testResult = "FAIL"
+            Write-LogInfo "Test result : $testResult"
+            exit 1
         }
         Write-LogInfo "Test result : $testResult"
     } catch {
