@@ -118,6 +118,7 @@ RunFIO()
 					# NVMe perf tests requires that numJob param should match the vCPU number
 					numJob=$(nproc)
 				fi
+				numJob=8
 				thread=$((qDepth/numJob))
 
 				iostatfilename="${IOSTATLOGDIR}/iostat-fio-${testmode}-${io}K-${thread}td.txt"
