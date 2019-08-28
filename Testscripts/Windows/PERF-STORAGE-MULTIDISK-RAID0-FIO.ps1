@@ -296,6 +296,18 @@ function Main {
             foreach ($iopsResult in $iopsResults) {
                 $summaryResult = "block_size=$($iopsResult["block_size"])`K q_depth=$($iopsResult["meta_data"]["q_depth"]) iops=$($iopsResult["io_per_second"])"
                 $currentTestResult.TestSummary += New-ResultSummary -testResult $summaryResult -metaData $metaData -checkValues "PASS,FAIL,ABORTED" -testName $currentTestData.testName
+                if ( [int]($iopsResult["block_size"]) -eq 4 -and `
+                [int]($iopsResult["meta_data"]["q_depth"]) -eq 256 -and `
+                [int]($iopsResult["io_per_second"]) -lt 42000 -and `
+                $currentMode -imatch "read" ) {
+                    $testResult = "FAIL"
+                }
+                if ( [int]($iopsResult["block_size"]) -eq 1024 -and `
+                [int]($iopsResult["meta_data"]["q_depth"]) -eq 8 -and `
+                [int]($iopsResult["io_per_second"]) -lt 500 -and `
+                $currentMode -imatch "write") {
+                    $testResult = "FAIL"
+                }
             }
         }
 
